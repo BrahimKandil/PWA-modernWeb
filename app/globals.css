@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-100 text-slate-800;
+}
+
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-slate-200 p-4;
+}
+
+.btn {
+  @apply inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors;
+}
+
+.btn-primary {
+  @apply btn bg-indigo-600 text-white hover:bg-indigo-700;
+}
+
+.btn-danger {
+  @apply btn bg-red-50 text-red-700 hover:bg-red-100 border border-red-200;
+}
+
+.btn-ghost {
+  @apply btn bg-white border border-slate-300 hover:bg-slate-50;
+}
+
+.input {
+  @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white;
+}
+
+.label {
+  @apply block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1;
+}
+
+table.data {
+  @apply w-full text-sm;
+}
+table.data th {
+  @apply text-left px-3 py-2 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 border-b;
+}
+table.data td {
+  @apply px-3 py-2 border-b border-slate-100;
+}
+
+.badge {
+  @apply inline-block rounded-full px-2 py-0.5 text-xs font-medium;
+}
+.badge-green { @apply badge bg-green-100 text-green-700; }
+.badge-red { @apply badge bg-red-100 text-red-700; }
+.badge-amber { @apply badge bg-amber-100 text-amber-700; }
+.badge-blue { @apply badge bg-blue-100 text-blue-700; }
+.badge-gray { @apply badge bg-slate-100 text-slate-600; }
