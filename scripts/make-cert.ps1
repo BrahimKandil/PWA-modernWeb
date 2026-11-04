@@ -1,7 +1,9 @@
 $ErrorActionPreference = 'Stop'
 
 # Regenerer un certificat mkcert pour l'IP Wi-Fi courante de ce PC.
-# A relancer si l'IP change (bail DHCP renouvelle) : mkcert 192.168.100.10 ...
+# FACULTATIF : server-https.js le fait tout seul via scripts/ensure-cert.js
+# (controle toutes les 30 s, resignation a chaud). Utiliser ce script seulement
+# si le serveur est arrete et qu'on veut preparer le certificat a l'avance.
 
 $mkcert = Join-Path $env:USERPROFILE 'Tools\mkcert.exe'
 if (-not (Test-Path $mkcert)) { Write-Output "mkcert introuvable : relance scripts/get-mkcert.ps1"; exit 1 }
@@ -24,4 +26,4 @@ New-Item -ItemType Directory -Force -Path $certs | Out-Null
 Copy-Item (Join-Path (& $mkcert -CAROOT | Select-Object -First 1) 'rootCA.pem') (Join-Path $certs 'arp-root-ca.pem') -Force
 
 Write-Output ""
-Write-Output ("Certificat regenere. URL telephone : https://" + $ip + ":3443")
+Write-Output ("Certificat regenere. URL telephone : https://" + $ip)

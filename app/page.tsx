@@ -1,22 +1,40 @@
-import { getDb } from "@/lib/db";
-import { getSession, mondayOf } from "@/lib/auth";
+import { findDocs } from "@/lib/db";
+import { requireSession } from "@/lib/auth";
+import { aujourdhui as cejour, lundiDe } from "@/lib/semaine";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard({ searchParams }: { searchParams: { erreur?: string } }) {
-  const session = getSession()!;
-  const db = getDb();
-  const semaine = mondayOf();
+  const session = await requireSession();
+  const semaine = lundiDe(cejour());
+  const aujourdhui = cejour();
+
+  const [usagers, classes, matieres, toutesEmplois, salles, presences, reclamations, devoirs, rendus, notifs] = await Promise.all([
+    findDocs("users"),
+    findDocs("classes"),
+    findDocs("matieres"),
+    findDocs("emplois"),
+    findDocs("salles"),
+    findDocs("presences"),
+    findDocs("reclamations"),
+    findDocs("cr_assignments"),
+    findDocs("cr_depots"),
+    findDocs("notifications", {}, { sort: { cree_le: -1 }, limit: 3 }),
+  ]);
+  const devoirParId = new Map(devoirs.map((a: any) => [a.id, a]));
+  const matiereParId = new Map(matieres.map((m: any) => [m.id, m]));
+  const salleParId = new Map(salles.map((s: any) => [s.id, s]));
+  const classeParId = new Map(classes.map((c: any) => [c.id, c]));
 
   const cards: { icon: string; label: string; value: string | number; href?: string; accent?: string }[] = [];
 
   if (session.role === "admin") {
-    const nbEtudiants = (db.prepare(`SELECT COUNT(*) c FROM users WHERE role='etudiant' AND actif=1`).get() as any).c;
-    const nbProfs = (db.prepare(`SELECT COUNT(*) c FROM users WHERE role='prof' AND actif=1`).get() as any).c;
-    const nbClasses = (db.prepare(`SELECT COUNT(*) c FROM classes`).get() as any).c;
-    const aValider = (db.prepare(`SELECT COUNT(*) c FROM matieres WHERE statut='termine'`).get() as any).c;
-    const nonActive = (db.prepare(`SELECT COUNT(*) c FROM users WHERE mot_de_passe IS NULL AND role!='admin'`).get() as any).c;
+    const nbEtudiants = usagers.filter((u: any) => u.role === "etudiant" && u.actif === 1).length;
+    const nbProfs = usagers.filter((u: any) => u.role === "prof" && u.actif === 1).length;
+    const nbClasses = classes.length;
+    const aValider = matieres.filter((m: any) => m.statut === "termine").length;
+    const nonActive = usagers.filter((u: any) => !u.mot_de_passe && u.role !== "admin").length;
     cards.push(
       { icon: "🎓", label: "Étudiants", value: nbEtudiants, href: "/users" },
       { icon: "👔", label: "Professeurs", value: nbProfs, href: "/users" },
@@ -25,16 +43,15 @@ export default async function Dashboard({ searchParams }: { searchParams: { erre
       { icon: "📧", label: "Comptes non activés", value: nonActive, href: "/emails", accent: nonActive > 0 ? "text-red-600" : "" }
     );
   } else if (session.role === "prof") {
-    const mesMatieres = (db.prepare(`SELECT COUNT(*) c FROM matieres WHERE prof_id=?`).get(session.id) as any).c;
-    const aCorriger = (db.prepare(
-      `SELECT COUNT(*) c FROM cr_depots d JOIN cr_assignments a ON a.id=d.assignment_id
-       WHERE a.prof_id=? AND d.note IS NULL AND a.date_limite < date('now','localtime')`
-    ).get(session.id) as any).c;
-    const mesEleves = (db.prepare(
-      `SELECT COUNT(DISTINCT u.id) c FROM users u JOIN matieres m ON m.classe_id=u.classe_id
-       WHERE m.prof_id=? AND u.role='etudiant' AND u.actif=1`
-    ).get(session.id) as any).c;
-    const clôturées = (db.prepare(`SELECT COUNT(*) c FROM matieres WHERE prof_id=? AND statut!='en_cours'`).get(session.id) as any).c;
+    const miennes = matieres.filter((m: any) => m.prof_id === session.id);
+    const mesMatieres = miennes.length;
+    const mesClasses = new Set(miennes.map((m: any) => m.classe_id));
+    const aCorriger = rendus.filter((d: any) => {
+      const a = devoirParId.get(d.assignment_id);
+      return d.note == null && a?.prof_id === session.id && a.date_limite < aujourdhui;
+    }).length;
+    const mesEleves = usagers.filter((u: any) => u.role === "etudiant" && u.actif === 1 && mesClasses.has(u.classe_id)).length;
+    const clôturées = miennes.filter((m: any) => m.statut !== "en_cours").length;
     cards.push(
       { icon: "📚", label: "Mes matières", value: mesMatieres, href: "/matieres" },
       { icon: "🎓", label: "Mes étudiants", value: mesEleves },
@@ -42,14 +59,14 @@ export default async function Dashboard({ searchParams }: { searchParams: { erre
       { icon: "🔒", label: "Matières clôturées", value: clôturées, href: "/notes" }
     );
   } else {
-    const nbAbsences = (db.prepare(`SELECT COUNT(*) c FROM presences WHERE etudiant_id=? AND statut='absent'`).get(session.id) as any).c;
-    const mesMatieres = (db.prepare(`SELECT COUNT(*) c FROM matieres WHERE classe_id=?`).get(session.classe_id ?? -1) as any).c;
-    const crOuverts = (db.prepare(
-      `SELECT COUNT(*) c FROM cr_assignments a JOIN matieres m ON m.id=a.matiere_id
-       WHERE m.classe_id=? AND a.date_limite >= date('now','localtime')
-       AND NOT EXISTS (SELECT 1 FROM cr_depots d WHERE d.assignment_id=a.id AND d.etudiant_id=?)`
-    ).get(session.classe_id ?? -1, session.id) as any).c;
-    const mesReclamations = (db.prepare(`SELECT COUNT(*) c FROM reclamations WHERE user_id=?`).get(session.id) as any).c;
+    const nbAbsences = presences.filter((p: any) => p.etudiant_id === session.id && p.statut === "absent").length;
+    const mesMatieres = matieres.filter((m: any) => m.classe_id === (session.classe_id ?? -1)).length;
+    const mesRendus = new Set(rendus.filter((d: any) => d.etudiant_id === session.id).map((d: any) => d.assignment_id));
+    const crOuverts = devoirs.filter((a: any) => {
+      const m = matiereParId.get(a.matiere_id);
+      return m?.classe_id === (session.classe_id ?? -1) && a.date_limite >= aujourdhui && !mesRendus.has(a.id);
+    }).length;
+    const mesReclamations = reclamations.filter((r: any) => r.user_id === session.id).length;
     cards.push(
       { icon: "📚", label: "Mes matières", value: mesMatieres, href: "/matieres" },
       { icon: "🕒", label: "Absences", value: nbAbsences, href: "/presences", accent: nbAbsences > 0 ? "text-red-600" : "" },
@@ -59,18 +76,24 @@ export default async function Dashboard({ searchParams }: { searchParams: { erre
   }
 
   // Emploi de la semaine (visible tous rôles — aussi servi hors ligne)
-  const classeFiltre = session.role === "etudiant" ? "AND e.classe_id = ?" : "";
-  const params = session.role === "etudiant" ? [semaine, session.classe_id ?? -1] : [semaine];
-  const emplois = db
-    .prepare(
-      `SELECT e.jour, e.creneau, e.heure_debut, e.heure_fin, m.code, m.nom, s.nom salle, c.nom classe
-       FROM emplois e JOIN matieres m ON m.id=e.matiere_id JOIN salles s ON s.id=e.salle_id JOIN classes c ON c.id=e.classe_id
-       WHERE e.semaine_debut=? ${classeFiltre} ORDER BY e.jour, e.creneau`
-    )
-    .all(...params) as any[];
+  const emplois = (
+    session.role === "etudiant"
+      ? toutesEmplois.filter((e: any) => e.classe_id === (session.classe_id ?? -1))
+      : toutesEmplois
+  )
+    .filter((e: any) => e.semaine_debut === semaine)
+    .map((e: any) => ({
+      jour: e.jour,
+      creneau: e.creneau,
+      heure_debut: e.heure_debut,
+      heure_fin: e.heure_fin,
+      code: matiereParId.get(e.matiere_id)?.code ?? "?",
+      nom: matiereParId.get(e.matiere_id)?.nom ?? "?",
+      salle: salleParId.get(e.salle_id)?.nom ?? "?",
+      classe: classeParId.get(e.classe_id)?.nom ?? "?",
+    }))
+    .sort((a: any, b: any) => String(a.jour).localeCompare(String(b.jour)) || a.creneau - b.creneau);
   const jours = ["LUNDI", "MARDI", "MERCREDI", "JEUDI", "VENDREDI"];
-
-  const notifs = db.prepare(`SELECT * FROM notifications ORDER BY cree_le DESC LIMIT 3`).all() as any[];
 
   return (
     <div className="space-y-6">
@@ -92,6 +115,17 @@ export default async function Dashboard({ searchParams }: { searchParams: { erre
             <div className="text-xs text-slate-500">{c.label}</div>
           </Link>
         ))}
+      </div>
+
+      <div className="card flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-52">
+          <h2 className="font-semibold">📴 Mode hors ligne</h2>
+          <p className="text-sm text-slate-500">
+            L&apos;emploi du temps de ton compte est enregistré sur l&apos;appareil automatiquement, a chaque page
+            ouverte en ligne — semaine courante et toutes les semaines de l&apos;annee. Aucun bouton a presser.
+          </p>
+        </div>
+        <Link href="/offline" className="btn-ghost">Voir la capture</Link>
       </div>
 
       <div className="card">

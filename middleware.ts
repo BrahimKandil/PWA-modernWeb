@@ -5,9 +5,6 @@ export function middleware(req: NextRequest) {
   const session = req.cookies.get("arp_session")?.value;
 
   if (pathname === "/login" || pathname === "/offline" || pathname === "/reset" || pathname === "/api/auth/login" || pathname === "/api/auth/reset") {
-    if (session && pathname === "/login") {
-      return NextResponse.redirect(new URL("/", req.url));
-    }
     return NextResponse.next();
   }
 

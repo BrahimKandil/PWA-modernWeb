@@ -2,8 +2,8 @@ import { getResetUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function ResetPage({ searchParams }: { searchParams: { token?: string; error?: string } }) {
-  const user = searchParams.token ? getResetUser(searchParams.token) : null;
+export default async function ResetPage({ searchParams }: { searchParams: { token?: string; error?: string } }) {
+  const user = searchParams.token ? await getResetUser(searchParams.token) : null;
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center">

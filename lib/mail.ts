@@ -1,7 +1,5 @@
-import { getDb } from "./db";
+import { insertDoc, nowLocal } from "./db";
 
-export function sendEmail(destinataire: string, sujet: string, contenu: string, lien?: string) {
-  getDb()
-    .prepare(`INSERT INTO emails (destinataire, sujet, contenu, lien, cree_le) VALUES (?,?,?,?,datetime('now','localtime'))`)
-    .run(destinataire, sujet, contenu, lien ?? null);
+export async function sendEmail(destinataire: string, sujet: string, contenu: string, lien?: string) {
+  await insertDoc("emails", { destinataire, sujet, contenu, lien: lien ?? null, cree_le: nowLocal() });
 }

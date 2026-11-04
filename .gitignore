@@ -3,3 +3,8 @@ node_modules/
 data/
 certs/
 *.tsbuildinfo
+.tunnel-secret
+.assistant-secret
+server.log
+Tools/
+.idea/

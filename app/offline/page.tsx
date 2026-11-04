@@ -1,79 +1,71 @@
 export const dynamic = "force-dynamic";
 
-import { getDb } from "@/lib/db";
-import { getSession, mondayOf } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
+import { emploisDuCompte, semaineCourante } from "@/lib/hors-ligne";
+import { libelle } from "@/lib/semaine";
+import EmploiTableau from "@/components/EmploiTableau";
+import HorsLigneSemaines from "@/components/HorsLigneSemaines";
 
-const JOURS = ["LUNDI", "MARDI", "MERCREDI", "JEUDI", "VENDREDI"];
-const CREAUX: Record<number, string> = { 1: "09:00 – 12:00", 2: "13:00 – 16:00" };
-
+// Ecran unique du mode hors ligne : l'emploi du temps du compte capture par le service worker.
 export default async function OfflinePage() {
-  // Si un utilisateur connecté avait consulté son emploi avant la coupure,
-  // la page /offline mise en cache peut avoir été régénérée avec son calendrier ;
-  // sinon on affiche une semaine type vide.
-  let session = null;
-  let emplois: any[] = [];
+  const courante = semaineCourante();
+
+  let session: any = null;
+  let groupes: { classe: string; lignes: any[] }[] = [];
   try {
-    session = getSession();
+    session = await getSession();
     if (session) {
-      const db = getDb();
-      const filtre = session.role === "etudiant" ? "AND e.classe_id = ?" : "";
-      const params = session.role === "etudiant" ? [mondayOf(), session.classe_id ?? -1] : [mondayOf()];
-      emplois = db
-        .prepare(
-          `SELECT e.jour, e.creneau, m.code, m.nom, s.nom salle, c.nom classe
-           FROM emplois e JOIN matieres m ON m.id=e.matiere_id JOIN salles s ON s.id=e.salle_id JOIN classes c ON c.id=e.classe_id
-           WHERE e.semaine_debut=? ${filtre}`
-        )
-        .all(...params) as any[];
+      const semaines = await emploisDuCompte(session);
+      groupes = semaines.find((s) => s.semaine === courante)?.groupes ?? [];
     }
   } catch {
-    // hors ligne pur : cookies/DB indisponibles, on garde la semaine type vide
+    // Base injoignable : la capture deja en memoire sur l'appareil reste consultable.
   }
 
-  return (
-    <div className="min-h-[70vh] flex items-center justify-center">
-      <div className="card w-full max-w-2xl text-center space-y-4">
-        <div className="text-5xl">📡</div>
-        <h1 className="text-xl font-bold">Vous êtes hors ligne</h1>
-        <p className="text-sm text-slate-500">
-          Cette page fonctionne sans connexion. Voici le calendrier de la semaine :
-          <span className="block font-semibold mt-1">{mondayOf()}</span>
-        </p>
+  const titre =
+    session?.role === "admin"
+      ? "Tous les emplois du temps"
+      : session?.role === "prof"
+        ? "Mes cours"
+        : "Mon emploi du temps";
 
-        <div className="overflow-x-auto text-left">
-          <table className="data">
-            <thead>
-              <tr><th></th>{JOURS.map((j) => <th key={j}>{j.slice(0, 3)}</th>)}</tr>
-            </thead>
-            <tbody>
-              {[1, 2].map((cr) => (
-                <tr key={cr}>
-                  <td className="whitespace-nowrap text-xs font-semibold text-slate-500">{CREAUX[cr]}</td>
-                  {JOURS.map((j) => {
-                    const c = emplois.find((e) => e.jour === j && e.creneau === cr);
-                    return (
-                      <td key={j} className="align-top">
-                        {c ? (
-                          <div>
-                            <div className="font-semibold text-xs">{c.code}</div>
-                            <div className="text-[10px] text-slate-500">{c.classe} · {c.salle}</div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-300 text-xs">Libre</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+  return (
+    <div className="min-h-[70vh] py-6 px-3">
+      <div className="max-w-3xl mx-auto space-y-4">
+        <div className="card text-center space-y-2">
+          <div className="text-4xl">📡</div>
+          <h1 className="text-xl font-bold">Vous êtes hors ligne</h1>
+          <p className="text-sm text-slate-500">
+            Seul l&apos;emploi du temps est disponible sans connexion · <span className="font-semibold">{titre}</span>
+            <span className="block font-semibold mt-1">{libelle(courante)}</span>
+          </p>
         </div>
 
-        <p className="text-xs text-slate-400">
-          Les pages consultées avec une connexion (emploi du temps, notes, présences…) restent accessibles hors ligne.
+        {groupes.length === 0 ? (
+          <div className="card text-center text-sm text-slate-500">
+            Aucun cours enregistré pour cette semaine.
+            {session?.role === "etudiant" && !session?.classe_id ? " Vous n'êtes affecté à aucune classe." : ""}
+            {!session ? " Ouvre l'application connectée une fois : la capture se fera toute seule." : ""}
+          </div>
+        ) : (
+          groupes.map((g) => (
+            <div key={g.classe} className="card space-y-2">
+              <h2 className="font-bold text-indigo-800">🏫 {g.classe}</h2>
+              <div className="overflow-x-auto">
+                <EmploiTableau lignes={g.lignes} />
+              </div>
+            </div>
+          ))
+        )}
+
+        <HorsLigneSemaines courante={courante} />
+
+        <p className="text-xs text-slate-400 text-center">
+          La sauvegarde se fait automatiquement a chaque page ouverte connectee — aucun bouton a presser.
         </p>
-        <a href="/" className="btn-primary inline-flex">Reconnexion — réessayer</a>
+        <div className="text-center">
+          <a href="/" className="btn-primary inline-flex">Reconnexion — réessayer</a>
+        </div>
       </div>
     </div>
   );

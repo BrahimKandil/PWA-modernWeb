@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getDb, verifyPassword, hashPassword } from "./db";
+import { verifyPassword, hashPassword, findOne, insertDoc, updateDoc, nowLocal } from "./db";
 import crypto from "crypto";
 
 const SECRET = process.env.ARP_SECRET ?? "arp-education-demo-secret";
@@ -21,18 +21,14 @@ function sign(userId: number) {
   return crypto.createHmac("sha256", SECRET).update(String(userId)).digest("hex").slice(0, 16);
 }
 
-export function login(email: string, password: string): SessionUser | null {
-  const user = getDb()
-    .prepare(`SELECT * FROM users WHERE email = ? AND actif = 1`)
-    .get(email.trim().toLowerCase()) as any;
+export async function login(email: string, password: string): Promise<SessionUser | null> {
+  const user = await findOne("users", { email: email.trim().toLowerCase(), actif: 1 });
   if (!user || !verifyPassword(password, user.mot_de_passe)) return null;
   return toSession(user);
 }
 
-function toSession(user: any): SessionUser {
-  const classe = user.classe_id
-    ? (getDb().prepare(`SELECT nom FROM classes WHERE id=?`).get(user.classe_id) as any)
-    : null;
+async function toSession(user: any): Promise<SessionUser> {
+  const classe = user.classe_id ? await findOne("classes", { id: user.classe_id }) : null;
   return {
     id: user.id,
     nom: user.nom,
@@ -44,27 +40,24 @@ function toSession(user: any): SessionUser {
   };
 }
 
-export function createInvitation(userId: number): string {
+export async function createInvitation(userId: number): Promise<string> {
   const token = crypto.randomBytes(24).toString("hex");
-  getDb()
-    .prepare(`INSERT INTO reset_tokens (token, user_id, cree_le) VALUES (?,?,datetime('now','localtime'))`)
-    .run(token, userId);
+  await insertDoc("reset_tokens", { token, user_id: userId, cree_le: nowLocal(), utilise: 0 });
   return token;
 }
 
-export function getResetUser(token: string): SessionUser | null {
-  const row = getDb()
-    .prepare(`SELECT u.*, t.utilise FROM reset_tokens t JOIN users u ON u.id=t.user_id WHERE t.token=? AND t.utilise=0`)
-    .get(token) as any;
-  return row ? toSession(row) : null;
+export async function getResetUser(token: string): Promise<SessionUser | null> {
+  const row = await findOne("reset_tokens", { token, utilise: 0 });
+  if (!row) return null;
+  const user = await findOne("users", { id: row.user_id });
+  return user ? toSession(user) : null;
 }
 
-export function setPasswordWithToken(token: string, newPassword: string): boolean {
-  const db = getDb();
-  const row = db.prepare(`SELECT user_id, utilise FROM reset_tokens WHERE token=? AND utilise=0`).get(token) as any;
+export async function setPasswordWithToken(token: string, newPassword: string): Promise<boolean> {
+  const row = await findOne("reset_tokens", { token, utilise: 0 });
   if (!row) return false;
-  db.prepare(`UPDATE users SET mot_de_passe=? WHERE id=?`).run(hashPassword(newPassword), row.user_id);
-  db.prepare(`UPDATE reset_tokens SET utilise=1 WHERE token=?`).run(token);
+  await updateDoc("users", { id: row.user_id }, { mot_de_passe: hashPassword(newPassword) });
+  await updateDoc("reset_tokens", { token }, { utilise: 1 });
   return true;
 }
 
@@ -81,21 +74,27 @@ export function clearSessionCookie() {
   cookies().delete("arp_session");
 }
 
-export function getSession(): SessionUser | null {
+export async function getSession(): Promise<SessionUser | null> {
   const raw = cookies().get("arp_session")?.value;
   if (!raw) return null;
   const [idStr, sig] = raw.split(".");
   const id = Number(idStr);
   if (!Number.isInteger(id) || sig !== sign(id)) return null;
-  const user = getDb().prepare(`SELECT * FROM users WHERE id = ? AND actif = 1`).get(id) as any;
+  const user = await findOne("users", { id, actif: 1 });
   if (!user) return null;
   return toSession(user);
 }
 
-export function requireRole(...roles: Role[]): SessionUser {
-  const session = getSession();
+export async function requireRole(...roles: Role[]): Promise<SessionUser> {
+  const session = await getSession();
   if (!session) redirect("/login");
   if (!roles.includes(session.role)) redirect("/?erreur=acces+refuse");
+  return session;
+}
+
+export async function requireSession(): Promise<SessionUser> {
+  const session = await getSession();
+  if (!session) redirect("/login");
   return session;
 }
 
@@ -108,3 +107,4 @@ export function mondayOf(d = new Date()) {
   x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
   return x.toISOString().slice(0, 10);
 }
+

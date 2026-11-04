@@ -1,92 +1,88 @@
-import { clientOrigin } from "@/lib/origin";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { findOne, findDocs, insertDoc, updateDoc, removeDocs } from "@/lib/db";
+import { peut } from "@/lib/permissions";
+import { routeurRetour } from "@/lib/retour";
+import { aujourdhui } from "@/lib/semaine";
 import { revalidatePath } from "next/cache";
 
-function isResponsible(db: any, session: any, matiereId: number) {
-  if (session.role === "admin") return true;
-  const m = db.prepare(`SELECT prof_id FROM matieres WHERE id=?`).get(matiereId) as any;
-  return !!m && m.prof_id === session.id;
-}
+const estDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso);
 
 export async function POST(req: NextRequest) {
-  const session = getSession();
-  if (!session || session.role === "etudiant") {
-    return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  }
+  const { erreur, ok, refus } = routeurRetour(req, "/notes");
+  const session = await getSession();
+  // La saisie des notes appartient au professeur ; l'administration consulte seulement.
+  if (!session || !peut(session.role, "notes", "creer")) return refus();
   const form = await req.formData();
   const action = String(form.get("action") ?? "create");
-  const db = getDb();
 
-  if (action === "create") {
-    const valeur = Number(form.get("valeur"));
+  if (action === "create" || action === "update") {
+    const brut = String(form.get("valeur") ?? "");
+    const valeur = Number(brut);
     const type = String(form.get("type") ?? "");
     const date = String(form.get("date") ?? "");
     const matiereId = Number(form.get("matiere_id"));
-    const etudiantId = Number(form.get("etudiant_id"));
-    if (Number.isNaN(valeur) || valeur < 0 || valeur > 20 || !["CC", "TP"].includes(type) || !date || !matiereId || !etudiantId) {
-      return NextResponse.redirect(new URL("/notes?error=note+invalide+(0-20)", clientOrigin(req)), { status: 303 });
+    const autorises = action === "create" ? ["CC", "TP"] : ["CC", "TP", "EXAM"];
+    if (brut.trim() === "" || !Number.isFinite(valeur) || valeur < 0 || valeur > 20 || !autorises.includes(type) || !estDate(date)) {
+      return erreur("note invalide (0-20, type et date requis)");
     }
-    if (!isResponsible(db, session, matiereId)) {
-      return NextResponse.redirect(new URL("/notes?error=vous+ne+responsabilisez+pas+cette+matiere", clientOrigin(req)), { status: 303 });
+    const m = await findOne("matieres", { id: matiereId });
+    if (!m || m.prof_id !== session.id) return refus();
+    if (m.statut !== "en_cours") return erreur("matière clôturée ou validée : saisie terminée");
+    if (date > aujourdhui()) return erreur("pas de note datée dans le futur");
+
+    if (action === "create") {
+      const etudiantId = Number(form.get("etudiant_id"));
+      const eleve = await findOne("users", { id: etudiantId, role: "etudiant", classe_id: m.classe_id, actif: 1 });
+      if (!eleve) return erreur("étudiant hors de la classe de la matière");
+      await insertDoc("notes", { valeur, type, date, matiere_id: matiereId, etudiant_id: etudiantId });
+      revalidatePath("/notes");
+      revalidatePath("/");
+      return ok("note ajoutée");
     }
-    const matiere = db.prepare(`SELECT * FROM matieres WHERE id=?`).get(matiereId) as any;
-    if (matiere.statut !== "en_cours") {
-      return NextResponse.redirect(new URL("/notes?error=matiere+cloturee+ou+validee", clientOrigin(req)), { status: 303 });
-    }
-    const eleve = db.prepare(`SELECT id FROM users WHERE id=? AND role='etudiant' AND classe_id=? AND actif=1`)
-      .get(etudiantId, matiere.classe_id) as any;
-    if (!eleve) {
-      return NextResponse.redirect(new URL("/notes?error=etudiant+hors+de+la+classe+de+la+matiere", clientOrigin(req)), { status: 303 });
-    }
-    db.prepare(`INSERT INTO notes (valeur, type, date, matiere_id, etudiant_id) VALUES (?,?,?,?,?)`)
-      .run(valeur, type, date, matiereId, etudiantId);
+
+    const id = Number(form.get("id"));
+    const n = await findOne("notes", { id });
+    if (!n || n.matiere_id !== matiereId) return erreur("note introuvable pour cette matière");
+    await updateDoc("notes", { id }, { valeur, type, date });
+    revalidatePath("/notes");
+    return ok("note mise à jour");
   }
 
   if (action === "cloturer") {
     const matiereId = Number(form.get("matiere_id"));
-    if (!isResponsible(db, session, matiereId)) {
-      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    }
-    const mat = db.prepare(`SELECT * FROM matieres WHERE id=?`).get(matiereId) as any;
-    if (!mat || mat.statut !== "en_cours") {
-      return NextResponse.redirect(new URL("/notes?error=matiere+deja+cloturee", clientOrigin(req)), { status: 303 });
-    }
-    if (session.role === "admin" && mat.prof_id) {
-      return NextResponse.redirect(new URL("/notes?error=cloture+reservee+au+professeur", clientOrigin(req)), { status: 303 });
-    }
-    const etudiants = db.prepare(`SELECT id FROM users WHERE role='etudiant' AND classe_id=?`).all(mat.classe_id) as any[];
-    const date = new Date().toISOString().slice(0, 10);
-    const tx = db.transaction(() => {
-      const del = db.prepare(`DELETE FROM notes WHERE matiere_id=? AND type='EXAM'`);
-      const ins = db.prepare(`INSERT INTO notes (valeur, type, date, matiere_id, etudiant_id) VALUES (?, 'EXAM', ?, ?, ?)`);
-      del.run(matiereId);
-      for (const e of etudiants) {
-        const v = Number(form.get(`note_${e.id}`));
-        if (!Number.isNaN(v) && v >= 0 && v <= 20) ins.run(v, date, matiereId, e.id);
+    const m = await findOne("matieres", { id: matiereId });
+    if (!m || m.prof_id !== session.id) return refus();
+    if (m.statut !== "en_cours") return erreur("matière déjà clôturée");
+    const eleves = await findDocs("users", { role: "etudiant", classe_id: m.classe_id, actif: 1 });
+    const date = aujourdhui();
+    await removeDocs("notes", { matiere_id: matiereId, type: "EXAM" });
+    let nb = 0;
+    for (const e of eleves) {
+      const brut = String(form.get(`note_${e.id}`) ?? "");
+      const v = Number(brut);
+      if (brut.trim() !== "" && Number.isFinite(v) && v >= 0 && v <= 20) {
+        await insertDoc("notes", { valeur: v, type: "EXAM", date, matiere_id: matiereId, etudiant_id: e.id });
+        nb++;
       }
-      db.prepare(`UPDATE matieres SET statut='termine' WHERE id=?`).run(matiereId);
-    });
-    tx();
+    }
+    await updateDoc("matieres", { id: matiereId }, { statut: "termine" });
+    revalidatePath("/notes");
+    revalidatePath("/matieres");
+    return ok(`matière clôturée — ${nb} note(s) d'examen, en attente de validation`);
   }
 
   if (action === "delete") {
     const id = Number(form.get("id"));
-    const n = db.prepare(`SELECT * FROM notes WHERE id=?`).get(id) as any;
-    if (n && !isResponsible(db, session, n.matiere_id)) {
-      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    }
-    if (n) {
-      const m = db.prepare(`SELECT statut FROM matieres WHERE id=?`).get(n.matiere_id) as any;
-      if (m?.statut === "valide") {
-        return NextResponse.redirect(new URL("/notes?error=notes+gelees+apres+validation+admin", clientOrigin(req)), { status: 303 });
-      }
-    }
-    db.prepare(`DELETE FROM notes WHERE id = ?`).run(Number(form.get("id")));
+    const n = await findOne("notes", { id });
+    if (!n) return erreur("note introuvable");
+    const m = await findOne("matieres", { id: n.matiere_id });
+    if (!m || m.prof_id !== session.id) return refus();
+    if (m.statut === "valide") return erreur("notes gelées après validation admin");
+    await removeDocs("notes", { id });
+    revalidatePath("/notes");
+    return ok("note supprimée");
   }
 
-  revalidatePath("/notes");
-  revalidatePath("/matieres");
-  return NextResponse.redirect(new URL("/notes", clientOrigin(req)), { status: 303 });
+  return erreur("action inconnue");
 }

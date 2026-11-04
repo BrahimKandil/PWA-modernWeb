@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   if (password.length < 6 || password !== confirm) {
     return NextResponse.redirect(new URL(`/reset?token=${token}&error=mdp`, base), { status: 303 });
   }
-  if (!setPasswordWithToken(token, password)) {
+  if (!(await setPasswordWithToken(token, password))) {
     return NextResponse.redirect(new URL(`/reset?token=${token}&error=invalide`, base), { status: 303 });
   }
   return NextResponse.redirect(new URL("/login?reset=1", base), { status: 303 });

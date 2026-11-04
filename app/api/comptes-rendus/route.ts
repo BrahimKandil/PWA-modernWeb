@@ -1,84 +1,116 @@
-import { clientOrigin } from "@/lib/origin";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { findOne, insertDoc, updateDoc, removeDocs, nowLocal } from "@/lib/db";
+import { peut } from "@/lib/permissions";
+import { routeurRetour } from "@/lib/retour";
+import { aujourdhui } from "@/lib/semaine";
 import { revalidatePath } from "next/cache";
 
+const estDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso);
+
 export async function POST(req: NextRequest) {
-  const session = getSession();
-  if (!session) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+  const { erreur, ok, refus } = routeurRetour(req, "/comptes-rendus");
+  const session = await getSession();
+  // L'administration consulte uniquement : ni création, ni correction, ni suppression.
+  if (!session || !peut(session.role, "comptes_rendus", "creer")) return refus();
   const form = await req.formData();
   const action = String(form.get("action") ?? "");
-  const db = getDb();
 
+  // --- Professeur : créer un compte rendu sur une de SES matières en cours ---
   if (action === "create") {
-    if (session.role === "etudiant") return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+    if (session.role !== "prof") return refus();
     const titre = String(form.get("titre") ?? "").trim();
     const consigne = String(form.get("consigne") ?? "").trim();
     const dateLimite = String(form.get("date_limite") ?? "");
     const matiereId = Number(form.get("matiere_id"));
-    const m = db.prepare(`SELECT * FROM matieres WHERE id=?`).get(matiereId) as any;
-    if (!titre || !consigne || !dateLimite || !m || m.statut !== "en_cours" || (session.role === "prof" && m.prof_id !== session.id)) {
-      return NextResponse.redirect(new URL("/comptes-rendus?error=champs+incomplets+ou+matiere+cloturee", clientOrigin(req)), { status: 303 });
-    }
-    db.prepare(
-      `INSERT INTO cr_assignments (titre, consigne, matiere_id, prof_id, date_limite, cree_le) VALUES (?,?,?,?,?,datetime('now','localtime'))`
-    ).run(titre, consigne, matiereId, m.prof_id ?? session.id, dateLimite);
+    const m = await findOne("matieres", { id: matiereId });
+    if (!titre || !consigne || !estDate(dateLimite)) return erreur("champs incomplets");
+    if (!m || m.prof_id !== session.id || m.statut !== "en_cours") return erreur("matière introuvable, clôturée ou qui ne vous appartient pas");
+    await insertDoc("cr_assignments", { titre, consigne, matiere_id: matiereId, prof_id: m.prof_id, date_limite: dateLimite, cree_le: nowLocal() });
     revalidatePath("/comptes-rendus");
-    return NextResponse.redirect(new URL("/comptes-rendus", clientOrigin(req)), { status: 303 });
+    return ok("compte rendu créé");
   }
 
+  // --- Professeur : supprimer son compte rendu et ses dépôts ---
+  if (action === "delete") {
+    if (session.role !== "prof") return refus();
+    const id = Number(form.get("id"));
+    const a = await findOne("cr_assignments", { id });
+    if (!a || a.prof_id !== session.id) return refus();
+    await removeDocs("cr_depots", { assignment_id: id });
+    await removeDocs("cr_assignments", { id });
+    revalidatePath("/comptes-rendus");
+    return ok("compte rendu supprimé");
+  }
+
+  // --- Professeur : attribuer / actualiser la note d'un dépôt ---
+  if (action === "noter") {
+    if (session.role !== "prof") return refus();
+    const depotId = Number(form.get("depot_id"));
+    const brut = String(form.get("note") ?? "");
+    const note = Number(brut);
+    const feedback = String(form.get("feedback") ?? "").trim();
+    if (brut.trim() === "" || !Number.isFinite(note) || note < 0 || note > 20) return erreur("note invalide (0-20)");
+    const d = await findOne("cr_depots", { id: depotId });
+    if (!d) return erreur("dépôt introuvable");
+    const a = await findOne("cr_assignments", { id: d.assignment_id });
+    if (!a || a.prof_id !== session.id) return refus();
+    await updateDoc("cr_depots", { id: depotId }, { note, feedback: feedback || null });
+    revalidatePath("/comptes-rendus");
+    return ok("note enregistrée");
+  }
+
+  // --- Étudiant : déposer son compte rendu ---
   if (action === "depot") {
-    if (session.role !== "etudiant") return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+    if (session.role !== "etudiant") return refus();
     const assignmentId = Number(form.get("assignment_id"));
     const contenu = String(form.get("contenu") ?? "").trim();
-    const a = db.prepare(`SELECT * FROM cr_assignments WHERE id=?`).get(assignmentId) as any;
-    if (!a || !contenu || a.date_limite < new Date().toISOString().slice(0, 10)) {
-      return NextResponse.redirect(new URL("/comptes-rendus?error=depot+impossible+(delasse+ou+vide)", clientOrigin(req)), { status: 303 });
-    }
-    const m = db.prepare(`SELECT classe_id, statut FROM matieres WHERE id=?`).get(a.matiere_id) as any;
-    if (m?.classe_id !== session.classe_id) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    if (m?.statut !== "en_cours") {
-      return NextResponse.redirect(new URL("/comptes-rendus?error=matiere+cloturee+depot+bloque", clientOrigin(req)), { status: 303 });
-    }
-    try {
-      db.prepare(
-        `INSERT INTO cr_depots (assignment_id, etudiant_id, contenu, rendu_le) VALUES (?,?,?,datetime('now','localtime'))`
-      ).run(assignmentId, session.id, contenu);
-    } catch {
-      return NextResponse.redirect(new URL("/comptes-rendus?error=deja+depose", clientOrigin(req)), { status: 303 });
-    }
+    if (!contenu) return erreur("dépôt vide");
+    const a = await findOne("cr_assignments", { id: assignmentId });
+    if (!a) return erreur("compte rendu introuvable");
+    const m = await findOne("matieres", { id: a.matiere_id });
+    if (!m || m.classe_id !== session.classe_id) return refus();
+    if (m.statut !== "en_cours") return erreur("matière clôturée : dépôt bloqué");
+    if (a.date_limite < aujourdhui()) return erreur("délai dépassé : dépôt fermé");
+    if (await findOne("cr_depots", { assignment_id: assignmentId, etudiant_id: session.id })) return erreur("déjà déposé — modifiez votre dépôt");
+    await insertDoc("cr_depots", { assignment_id: assignmentId, etudiant_id: session.id, contenu, rendu_le: nowLocal(), note: null, feedback: null });
     revalidatePath("/comptes-rendus");
-    return NextResponse.redirect(new URL("/comptes-rendus", clientOrigin(req)), { status: 303 });
+    return ok("compte rendu déposé");
   }
 
-  if (action === "noter") {
-    if (session.role === "etudiant") return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    const depotId = Number(form.get("depot_id"));
-    const note = Number(form.get("note"));
-    const feedback = String(form.get("feedback") ?? "").trim();
-    const d = db
-      .prepare(`SELECT dp.*, a.date_limite, a.prof_id FROM cr_depots dp JOIN cr_assignments a ON a.id=dp.assignment_id WHERE dp.id=?`)
-      .get(depotId) as any;
-    if (!d || (session.role === "prof" && d.prof_id !== session.id)) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    if (Number.isNaN(note) || note < 0 || note > 20) {
-      return NextResponse.redirect(new URL("/comptes-rendus?error=note+invalide+(0-20)", clientOrigin(req)), { status: 303 });
-    }
-    db.prepare(`UPDATE cr_depots SET note=?, feedback=? WHERE id=?`).run(note, feedback || null, depotId);
+  // --- Étudiant : modifier son dépôt (tant que matière en cours et délai non dépassé) ---
+  if (action === "update_depot") {
+    if (session.role !== "etudiant") return refus();
+    const id = Number(form.get("id"));
+    const contenu = String(form.get("contenu") ?? "").trim();
+    if (!contenu) return erreur("dépôt vide");
+    const d = await findOne("cr_depots", { id });
+    if (!d || d.etudiant_id !== session.id) return refus();
+    if (d.note != null) return erreur("dépôt déjà noté : non modifiable");
+    const a = await findOne("cr_assignments", { id: d.assignment_id });
+    const m = a ? await findOne("matieres", { id: a.matiere_id }) : null;
+    if (!m || m.statut !== "en_cours") return erreur("matière clôturée : modification bloquée");
+    if (a && a.date_limite < aujourdhui()) return erreur("délai dépassé : modification fermée");
+    await updateDoc("cr_depots", { id }, { contenu, rendu_le: nowLocal() });
     revalidatePath("/comptes-rendus");
-    revalidatePath("/notes");
-    return NextResponse.redirect(new URL("/comptes-rendus", clientOrigin(req)), { status: 303 });
+    return ok("dépôt mis à jour");
   }
 
-  if (action === "delete") {
-    if (session.role === "etudiant") return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    const a = db.prepare(`SELECT * FROM cr_assignments WHERE id=?`).get(Number(form.get("id"))) as any;
-    if (a && session.role === "prof" && a.prof_id !== session.id) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    db.prepare(`DELETE FROM cr_depots WHERE assignment_id=?`).run(a?.id);
-    db.prepare(`DELETE FROM cr_assignments WHERE id=?`).run(Number(form.get("id")));
+  // --- Étudiant : retirer son dépôt (jamais après notation) ---
+  if (action === "delete_depot") {
+    if (session.role !== "etudiant") return refus();
+    const id = Number(form.get("id"));
+    const d = await findOne("cr_depots", { id });
+    if (!d || d.etudiant_id !== session.id) return refus();
+    if (d.note != null) return erreur("dépôt noté : non supprimable");
+    const a = await findOne("cr_assignments", { id: d.assignment_id });
+    const m = a ? await findOne("matieres", { id: a.matiere_id }) : null;
+    if (!m || m.statut !== "en_cours") return erreur("matière clôturée : retrait bloqué");
+    if (a && a.date_limite < aujourdhui()) return erreur("délai dépassé : retrait fermé");
+    await removeDocs("cr_depots", { id });
     revalidatePath("/comptes-rendus");
-    return NextResponse.redirect(new URL("/comptes-rendus", clientOrigin(req)), { status: 303 });
+    return ok("dépôt retiré");
   }
 
-  return NextResponse.redirect(new URL("/comptes-rendus", clientOrigin(req)), { status: 303 });
+  return erreur("action inconnue");
 }

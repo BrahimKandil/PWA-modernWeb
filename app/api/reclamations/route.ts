@@ -1,52 +1,52 @@
-import { clientOrigin } from "@/lib/origin";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { findOne, insertDoc, updateDoc, removeDocs, nowLocal } from "@/lib/db";
+import { peut } from "@/lib/permissions";
+import { routeurRetour } from "@/lib/retour";
 import { revalidatePath } from "next/cache";
 
+const TYPES = ["note", "emploi", "salle", "autre"];
+const STATUTS = ["ouvert", "en_cours", "traite"];
+
 export async function POST(req: NextRequest) {
-  const session = getSession();
-  if (!session) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+  const { erreur, ok, refus } = routeurRetour(req, "/reclamations");
+  const session = await getSession();
+  // L'administration consulte uniquement : elle ne crée ni ne modifie aucune réclamation.
+  if (!session || !peut(session.role, "reclamations", "creer")) return refus();
   const form = await req.formData();
   const action = String(form.get("action") ?? "create");
-  const db = getDb();
 
   if (action === "create") {
-    // Seuls profs et étudiants peuvent créer une réclamation
-    if (session.role === "admin") {
-      return NextResponse.redirect(new URL("/reclamations?error=admin+ne+peut+pas+creer", clientOrigin(req)), { status: 303 });
-    }
     const objet = String(form.get("objet") ?? "").trim();
     const message = String(form.get("message") ?? "").trim();
     const type = String(form.get("type") ?? "");
-    if (!objet || !message || !["note", "emploi", "salle", "autre"].includes(type)) {
-      return NextResponse.redirect(new URL("/reclamations?error=champs+incomplets", clientOrigin(req)), { status: 303 });
+    if (!objet || !message || !TYPES.includes(type)) return erreur("champs incomplets");
+    await insertDoc("reclamations", { objet, message, type, statut: "ouvert", user_id: session.id, cree_le: nowLocal() });
+    revalidatePath("/reclamations");
+    return ok("réclamation envoyée");
+  }
+
+  if (action === "update" || action === "delete") {
+    const id = Number(form.get("id"));
+    const r = await findOne("reclamations", { id });
+    if (!r) return erreur("réclamation introuvable");
+    if (r.user_id !== session.id) return refus(); // on ne touche que les siennes
+
+    if (action === "delete") {
+      await removeDocs("reclamations", { id });
+      revalidatePath("/reclamations");
+      return ok("réclamation supprimée");
     }
-    db.prepare(
-      `INSERT INTO reclamations (objet, message, type, user_id, cree_le) VALUES (?,?,?,?,datetime('now','localtime'))`
-    ).run(objet, message, type, session.id);
+
+    const objet = String(form.get("objet") ?? "").trim();
+    const message = String(form.get("message") ?? "").trim();
+    const type = String(form.get("type") ?? "");
+    const statut = String(form.get("statut") ?? r.statut);
+    if (!objet || !message || !TYPES.includes(type) || !STATUTS.includes(statut)) return erreur("champs incomplets");
+    await updateDoc("reclamations", { id }, { objet, message, type, statut });
     revalidatePath("/reclamations");
-    return NextResponse.redirect(new URL("/reclamations", clientOrigin(req)), { status: 303 });
+    return ok("réclamation mise à jour");
   }
 
-  if (action === "statut") {
-    // Seul l'admin change le statut
-    if (session.role !== "admin") return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    const statut = String(form.get("statut") ?? "");
-    if (!["ouvert", "en_cours", "traite"].includes(statut)) {
-      return NextResponse.redirect(new URL("/reclamations?error=statut+invalide", clientOrigin(req)), { status: 303 });
-    }
-    db.prepare(`UPDATE reclamations SET statut=? WHERE id=?`).run(statut, Number(form.get("id")));
-    revalidatePath("/reclamations");
-    return NextResponse.redirect(new URL("/reclamations", clientOrigin(req)), { status: 303 });
-  }
-
-  if (action === "delete") {
-    if (session.role !== "admin") return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    db.prepare(`DELETE FROM reclamations WHERE id=?`).run(Number(form.get("id")));
-    revalidatePath("/reclamations");
-    return NextResponse.redirect(new URL("/reclamations", clientOrigin(req)), { status: 303 });
-  }
-
-  return NextResponse.redirect(new URL("/reclamations", clientOrigin(req)), { status: 303 });
+  return erreur("action inconnue");
 }

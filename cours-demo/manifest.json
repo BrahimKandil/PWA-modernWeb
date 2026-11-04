@@ -1,0 +1,177 @@
+[
+ {
+  "matiere": "DEVWEB",
+  "numero": 1,
+  "titre": "Structure sémantique d'une page HTML",
+  "fichier": "DEVWEB/chapitre-1.docx",
+  "texte": "Chapitre 1 — Structure sémantique d'une page HTML\n\nLe HTML décrit le sens du contenu d'une page, pas sa couleur. Un navigateur, un lecteur d'écran et un moteur de recherche lisent la même structure, ce qui rend sémantique.\n\nUne balise racine html contient head (métadonnées) et body (contenu visible). Le title, la description et le viewport se placent dans head.\n\nLes balises sémantiques de repérage sont header, nav, main, section, article, aside et footer. Une page ne doit contenir qu'un seul main, car c'est le contenu principal.\n\nUn titre se hiérarchise sans sauter de niveau : h1 pour le titre de page, puis h2, h3. Le texte alternatif d'une image informative est obligatoire, vide pour une image décorative.\n\nLes attributs data-* portent de l'information personnalisée lisible en JavaScript, et id doit rester unique dans le document car il sert de cible d'ancrage.\n\nUn formulaire se structure avec form, label associé par for, et les types input adaptés : email, number, date. Le navigateur apporte alors une validation et un clavier correct sur mobile.\n\nÀ retenir : HTML structure, CSS met en forme, JavaScript comportement. Écrire du HTML sémantique rend le site accessible, indexable et plus simple à maintenir."
+ },
+ {
+  "matiere": "DEVWEB",
+  "numero": 2,
+  "titre": "CSS : boîtes, flexbox et grille",
+  "fichier": "DEVWEB/chapitre-2.docx",
+  "texte": "Chapitre 2 — CSS : boîtes, flexbox et grille\n\nCSS applique une mise en forme au document HTML en séparant le fond de la forme. Comprendre le modèle de boîte suffit à prévoir la place prise par n'importe quel élément.\n\nChaque élément est une boîte : contenu, padding, bordure, marge. Avec box-sizing border-box, la largeur déclarée inclut le padding et la bordure, ce qui simplifie les calculs.\n\nUn sélecteur a une spécificité : identifiant plus fort que classe, classe plus forte que balise. En cas d'égalité, la règle écrite le plus tard gagne.\n\nFlexbox aligne des éléments sur un axe : display flex sur le parent, justify-content pour l'axe principal, align-items pour l'axe perpendiculaire, gap pour l'espacement.\n\nGrid dispose en deux dimensions avec grid-template-columns et des unités fractionnaires, par exemple repeat(3, 1fr). Flexbox reste préférable pour une barre d'outils.\n\nUne media query adapte la mise en forme à la largeur d'écran ; le mobile-first consiste à écrire le style de base petit puis à enrichir avec min-width.\n\nÀ retenir : on raisonne d'abord en conteneur puis en élément. Flexbox pour une ligne, Grid pour une page, et les unités relatives pour que le texte reste lisible partout."
+ },
+ {
+  "matiere": "DEVWEB",
+  "numero": 3,
+  "titre": "JavaScript et manipulation du DOM",
+  "fichier": "DEVWEB/chapitre-3.docx",
+  "texte": "Chapitre 3 — JavaScript et manipulation du DOM\n\nLe JavaScript rend la page vivante en modifiant le document après son chargement. Le DOM est l'arbre d'objets qui représente les nœuds HTML.\n\nOn lit le DOM avec querySelector et querySelectorAll, on crée un nœud avec document.createElement et on l'insère avec append. Le texte se pose avec textContent, jamais en concaténant du HTML.\n\nUn événement s'écoute avec addEventListener : click, submit, input, keydown. L'objet événement expose target, et preventDefault arrête le comportement par défaut d'un lien ou d'un formulaire.\n\nLa délégation d'événements écoute un conteneur unique et filtre par e.target.closest : moins de listeners, et les éléments ajoutés plus tard restent fonctionnels.\n\nLes variables se déclarent avec const par défaut et let quand la valeur change. Le scope de bloc évite les fuites que provoque var.\n\nUn tableau se parcourt avec forEach, se transforme avec map et se filtre avec filter ; ces trois méthodes retournent un nouveau tableau sans modifier l'original.\n\nÀ retenir : lire, écouter, modifier. On évite innerHTML avec des données saisies par l'utilisateur, car il réinjecte du code exécutable dans la page."
+ },
+ {
+  "matiere": "DEVWEB",
+  "numero": 4,
+  "titre": "Asynchrone, promesses et appels API",
+  "fichier": "DEVWEB/chapitre-4.docx",
+  "texte": "Chapitre 4 — Asynchrone, promesses et appels API\n\nUne page web passe son temps à attendre : un serveur, une animation, un minuteur. Le modèle asynchrone évite de bloquer l'affichage pendant l'attente.\n\nUne Promise représente une valeur à venir ; elle passe de pending à fulfilled ou rejected. await suspend la fonction async jusqu'à sa résolution sans bloquer le reste de la page.\n\nfetch retourne une Promise de Response : il faut relire status avant d'appeler json, car une erreur HTTP 404 n'est pas une erreur réseau et ne rejette pas la promesse.\n\nUne requête POST s'écrit fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(objet) }).\n\nPromise.all attend plusieurs requêtes en parallèle et échoue dès une rejection ; Promise.allSettled conserve toutes les issues.\n\ntry/catch entoure l'await pour traiter l'erreur, et un timeout se pose avec AbortSignal.timeout qui interrompt la requête en cours.\n\nÀ retenir : le réseau échoue. Un code web correct prévoit le cas lent, le cas indisponible et le message à montrer à l'utilisateur."
+ },
+ {
+  "matiere": "DEVWEB",
+  "numero": 5,
+  "titre": "Sécurité du front : XSS, CSRF et en-têtes",
+  "fichier": "DEVWEB/chapitre-5.docx",
+  "texte": "Chapitre 5 — Sécurité du front : XSS, CSRF et en-têtes\n\nTout ce qui vient du navigateur ou d'un tiers est suspect. La sécurité d'une application web se joue dès la couche d'affichage.\n\nUne injection XSS exécute du script volé dans la page de la victime. La parade de base est l'échappement de la sortie : textContent plutôt qu'innerHTML, et encodage des caractères sensibles.\n\nLe CSP (Content-Security-Policy) liste les origines autorisées pour les scripts, les styles et les images, ce qui limite une injection réussie.\n\nUne attaque CSRF force le navigateur d'un utilisateur connecté à envoyer une requête valide. On s'en protège par un jetant vérifié côté serveur et par le attribut SameSite du cookie.\n\nUn cookie de session se veut httpOnly pour le rendre illisible au script, secure pour n'être transmis qu'en HTTPS, et SameSite lax ou strict.\n\nAucun secret ne vit dans le front : une clé d'API lisible dans le bundle est publique. Les appels authentifiés passent par le serveur.\n\nÀ retenir : échapper la sortie, valider l'entrée, sécuriser le cookie. Le navigateur ne fait pas confiance à la place du serveur."
+ },
+ {
+  "matiere": "BDD",
+  "numero": 1,
+  "titre": "Transactions et propriétés ACID",
+  "fichier": "BDD/chapitre-1.docx",
+  "texte": "Chapitre 1 — Transactions et propriétés ACID\n\nUne transaction regroupe plusieurs opérations SQL en une unité indivisible de travail, pour que la base ne reste jamais dans un état contradictoire.\n\nBEGIN TRANSACTION ouvre la transaction, COMMIT la valide et ROLLBACK l'annule en restaurant l'état antérieur.\n\nAtomicité : tout est appliqué ou rien. Cohérence : les contraintes et invariants du schéma restent vrais après la validation.\n\nIsolation : deux transactions concurrentes ne doivent pas se lire mutuellement à mi-chemin. Durabilité : une fois validée, la donnée survit à une panne de courant.\n\nLes niveaux d'isolation gèrent le compromis. READ UNCOMMITTED autorise la lecture sale, READ COMMITTED ne lit que des données validées, REPEATABLE READ fige les lignes déjà lues, SERIALIZABLE évite les lectures fantômes en verrouillant les plages.\n\nUn point de sauvegarde permet un ROLLBACK TO partiel, et un interblocage (deadlock) est résolu par le serveur qui sacrifie une des transactions bloquées.\n\nÀ retenir : ACID décrit la garantie, le niveau d'isolation décrit le prix. Une application métier choisit en général READ COMMITTED, puis durcit le niveau seulement si un incident l'exige."
+ },
+ {
+  "matiere": "BDD",
+  "numero": 2,
+  "titre": "Indexation et structure B-tree",
+  "fichier": "BDD/chapitre-2.docx",
+  "texte": "Chapitre 2 — Indexation et structure B-tree\n\nUn index est une structure annexe qui accélère la lecture au prix d'une écriture plus lente et d'un espace disque supplémentaire.\n\nLe B-tree garde les clés triées dans des feuilles reliées entre elles, ce qui permet une recherche en logarithme du nombre de lignes et un parcours de plage sans tri.\n\nUn index clustered range physiquement les lignes dans l'ordre de la clé et n'existe qu'une fois par table ; un index non clustered stocke la clé et un pointeur vers la ligne.\n\nUne indexation sur une colonne utilisée dans WHERE ou JOIN sert vraiment ; un index sur une colonne à deux valeurs n'apporte rien car le choix reste séquentiel.\n\nUn index couvrant contient toutes les colonnes demandées par la requête : le serveur n'a plus à retourner aux lignes, ce que l'analyseur appelle un index only scan.\n\nLa fonction EXPLAIN montre le plan retenu : seq scan signifie que l'index n'est pas utilisé, souvent à cause d'une fonction appliquée sur la colonne indexée.\n\nÀ retenir : on indexe les prédicats et les clés de jointure, on désindexe ce qui n'est jamais lu, et on mesure avec EXPLAIN avant de conclure."
+ },
+ {
+  "matiere": "BDD",
+  "numero": 3,
+  "titre": "Modèle relationnel et normalisation",
+  "fichier": "BDD/chapitre-3.docx",
+  "texte": "Chapitre 3 — Modèle relationnel et normalisation\n\nLe modèle relationnel range l'information en tables de lignes et de colonnes, avec des règles de normalisation qui suppriment les redondances.\n\nUne relation est une table, un tuple une ligne, un attribut une colonne. Une clé primaire identifie chaque ligne de façon unique et non nulle.\n\nUne clé étrangère désigne une clé primaire d'une autre table et fonde l'intégrité référentielle, contrôlée par le serveur avec des actions ON DELETE.\n\nLa première forme normale interdit les valeurs multipliées dans une cellule et les groupes répétés dans une colonne.\n\nLa deuxième forme normale exige que tout attribut non clé dépende de la clé entière, pas d'une partie d'une clé composite. La troisième supprime la dépendance transitive entre attributs non clés.\n\nUne forme normale supérieure simplifie la maintenance : une seule écriture pour une information, mais elle peut imposer plus de jointures en lecture, ce qui explique les dénormalisations contrôlées.\n\nÀ retenir : normaliser évite les anomalies d'insertion, de mise à jour et de suppression. On dénormalise en connaissance de cause, jamais par paresse."
+ },
+ {
+  "matiere": "BDD",
+  "numero": 4,
+  "titre": "Jointures et langage SQL de requête",
+  "fichier": "BDD/chapitre-4.docx",
+  "texte": "Chapitre 4 — Jointures et langage SQL de requête\n\nSQL décrit le résultat voulu, pas la méthode pour l'obtenir. Les jointures recomposent l'information séparée en tables.\n\nSELECT définit les colonnes, FROM les sources, WHERE filtre les lignes avant regroupement, GROUP BY regroupe, HAVING filtre les groupes, ORDER BY trie, LIMIT borne le nombre de lignes.\n\nLa jointure interne ne conserve que les appariements trouvés des deux côtés. LEFT JOIN conserve toutes les lignes de la table de gauche, avec NULL à droite quand rien ne correspond.\n\nUne jointure sur une clé étrangère indexée reste rapide ; une jointure sans condition forme un produit cartésien, source de résultats faux et de requêtes bloquantes.\n\nSous-requête corrélée et JOIN donnent souvent le même résultat ; la jointure externe sur une clé est plus lisible qu'un IN avec sous-requête quand il faut récupérer plusieurs colonnes.\n\nNULL ne se compare pas : IS NULL teste l'absence, et toute arithmétique avec NULL produit NULL. COUNT(*) compte les lignes, COUNT(colonne) ignore les valeurs nulles.\n\nÀ retenir : écrire la jointure avant le filtre, tester avec un compte, et se souvenir qu'une absence est un état, pas une valeur."
+ },
+ {
+  "matiere": "BDD",
+  "numero": 5,
+  "titre": "Sauvegardes, réplication et reprise après panne",
+  "fichier": "BDD/chapitre-5.docx",
+  "texte": "Chapitre 5 — Sauvegardes, réplication et reprise après panne\n\nUne base de production se juge sur sa capacité à être remontée après un incident, pas seulement sur sa vitesse de requête.\n\nLe dump logique exporte le schéma et les données en SQL, et se restaure sur une instance neuve ; il est portable mais lent sur de gros volumes.\n\nLa sauvegarde physique copie les fichiers de la base et demande un arrêt propre ou une consistance assurée par le moteur.\n\nLe journal des transactions (write-ahead log) enregistre chaque modification avant son application ; la relecture permet de défaire les transactions non validées après un crash.\n\nLa récupération point-in-time combine une sauvegarde complète et les journaux d'archivage pour rejouer les écritures jusqu'à la minute choisie.\n\nLa réplication asynchrone réplique les écritures vers un ou plusieurs replicas de lecture, avec un décalage possible ; la restauration d'un replica ne remplace pas un test de restauration réel.\n\nÀ retenir : une sauvegarde non testée n'existe pas. On programme la restauration, on mesure le temps de perte admissible et on dimensionne la réplication en conséquence."
+ },
+ {
+  "matiere": "COMPTA",
+  "numero": 1,
+  "titre": "Patrimoine, bilan et équilibre",
+  "fichier": "COMPTA/chapitre-1.docx",
+  "texte": "Chapitre 1 — Patrimoine, bilan et équilibre\n\nLa comptabilité générale traduit le patrimoine d'une entreprise en chiffres, à une date donnée et de façon vérifiable.\n\nLe bilan présente le patrimoine à la clôture : l'actif indique où va l'argent, le passif d'où il vient. Total actif égale total passif, par construction.\n\nÀ l'actif, les immobilisations durables comme les machines et les logiciels, puis le stock, les créances clients et la trésorerie. L'actif circulant se renouvelle dans l'année.\n\nAu passif, les capitaux propres rassemblent le capital et les résultats, les provisions et dettes financières, puis les dettes fournisseurs et fiscales.\n\nLe fonds de roulement net logique compare les ressources durables aux emplois durables ; il finance le besoin en fonds de roulement, lié au cycle d'exploitation.\n\nLa trésorerie nette est la différence entre le fonds de roulement et le besoin en fonds de roulement ; elle doit rester positive pour éviter le découvert structurel.\n\nÀ retenir : le bilan est une photo, le compte de résultat un film. Équilibrer ne veut pas dire être rentable ni avoir de la trésorerie."
+ },
+ {
+  "matiere": "COMPTA",
+  "numero": 2,
+  "titre": "Compte de résultat et partie double",
+  "fichier": "COMPTA/chapitre-2.docx",
+  "texte": "Chapitre 2 — Compte de résultat et partie double\n\nLe compte de résultat mesure la performance sur l'exercice en opposant les produits aux charges, par nature.\n\nLes charges se répartissent en charges d'exploitation, financières et exceptionnelles ; les produits suivent la même logique, avec le chiffre d'affaires en tête.\n\nLe résultat = produits − charges. Positif il est bénéfice, négatif il est perte, et il se retrouve dans les capitaux propres du bilan suivant.\n\nLa partie double impose que tout mouvement soit enregistré deux fois au minimum : un débit et un crédit de même montant, ce qui rend l'écrit vérifiable.\n\nLe compte de trésorerie est débité quand l'argent entre et crédité quand il sort ; les charges sont débitées et les produits crédités.\n\nLe journal est la suite chronologique des écritures, avec date, libellé, comptes, montants. Aucune pièce comptable n'est valide sans pièce justificative.\n\nÀ retenir : débit et crédit ne sont pas entrée et sortie d'argent : ce sont les deux côtés d'un même mouvement de valeur."
+ },
+ {
+  "matiere": "COMPTA",
+  "numero": 3,
+  "titre": "Amortissements et dépréciations",
+  "fichier": "COMPTA/chapitre-3.docx",
+  "texte": "Chapitre 3 — Amortissements et dépréciations\n\nUn bien consommable perd de la valeur : la comptabilité en constate la perte progressive plutôt que de la concentrer sur l'année d'achat.\n\nL'amortissement constat une perte de valeur irréversible d'une immobilisation, étalée sur sa durée d'utilisation, par exemple cinq ans pour un matériel informatique.\n\nLa base amortissable est le coût d'acquisition moins la valeur résiduelle. La dotation annuelle en linéaire est la base divisée par la durée.\n\nLe mode dégressif accélère les dotations les premières années et correspond aux biens dont l'usage s'intense au début.\n\nLe prorata temporis débute l'amortissement à la date de mise en service et non à la date d'achat, ce qui évite de surcharger un exercice.\n\nLa valeur nette comptable est le coût moins les amortissements cumulés. Une dépréciation, elle, constate une perte réversible et peut être reprise en cas de retour à meilleure fortune.\n\nÀ retenir : amortir n'est pas épargner. La dotation est une charge qui réduit le résultat mais ne décaisse pas de trésorerie."
+ },
+ {
+  "matiere": "COMPTA",
+  "numero": 4,
+  "titre": "TVA et taxes sur le chiffre d'affaires",
+  "fichier": "COMPTA/chapitre-4.docx",
+  "texte": "Chapitre 4 — TVA et taxes sur le chiffre d'affaires\n\nLa TVA est un impôt indirect collecté par l'entreprise pour le compte de l'État, neutre pour elle mais central dans son suivi.\n\nL'entreprise collecte la TVA sur ses ventes et déduit la TVA sur ses achats : la TVA à décaisser est la différence entre collectée et déductible.\n\nLe compte de TVA collectée est au crédit, celui de TVA déductible au débit ; le solde se règle en fin de période vers l'État ou en crédit reportable.\n\nLe fait générateur et l'exigibilité déterminent la période d'imposition ; les encaissements sur les prestations de services rendent la TVA exigible.\n\nTrois taux coexistent en général : normal, intermédiaire et réduit. Une facture doit faire apparaître le montant hors taxes, le taux, le montant de TVA et le total.\n\nUne TVA non récupérable, comme celle sur les véhicules de tourisme, s'intègre dans le coût d'achat et s'amortit avec lui.\n\nÀ retenir : la TVA est une dette envers l'État tant qu'elle n'est pas décaissée. Elle ne doit jamais rester dormante au compte de trésorerie."
+ },
+ {
+  "matiere": "COMPTA",
+  "numero": 5,
+  "titre": "Travaux d'inventaire et rattachement des charges",
+  "fichier": "COMPTA/chapitre-5.docx",
+  "texte": "Chapitre 5 — Travaux d'inventaire et rattachement des charges\n\nÀ la clôture, on corrige les écritures pour que chaque exercice ne supporte que ce qui le concerne.\n\nLe principe d'indépendance des exercices rattache les charges et les produits à la période qui les a vus naître, pas à celle de leur paiement.\n\nLes charges à payer sont déjà consommées mais non facturées, comme une location ou des honoraires : on les constate par une écriture de régularisation.\n\nLes produits constatés d'avance ont été encaissés mais restent à réaliser, par exemple un abonnement payé d'avance.\n\nLes charges constatées d'avance correspondent à des factures déjà enregistrées pour une consommation future.\n\nLes stocks sont comptés physiquement à la clôture, l'écart entre stock déclaré et stock réel est constaté, et les créances douteuses sont dépréciées au taux de recouvrement probable.\n\nÀ retenir : l'inventaire rapproche le compte de la réalité. Sans rattachement correct, le résultat d'un exercice est celui du voisin."
+ },
+ {
+  "matiere": "RESAPP",
+  "numero": 1,
+  "titre": "Modèle OSI et encapsulation",
+  "fichier": "RESAPP/chapitre-1.docx",
+  "texte": "Chapitre 1 — Modèle OSI et encapsulation\n\nLe réseau se comprend en couches : chaque niveau ajoute sa propre entête et ne parle qu'au niveau identique de l'autre machine.\n\nLes sept couches OSI sont physique, liaison, réseau, transport, session, présentation, application. Le modèle TCP/IP en retient quatre, de la liaison à l'application.\n\nÀ l'émission chaque couche encapsule la donnée de la couche supérieure : données, segment, paquet, trame, bits. À la réception on désencapsule dans l'ordre inverse.\n\nL'adresse MAC identifie la carte au niveau liaison, l'adresse IP identifie l'hôte au niveau réseau ; les deux sont nécessaires, l'une locale, l'autre atteignable de loin.\n\nUn switch travaille en couche deux et diffuse selon les MAC, un routeur travaille en couche trois et choisit le chemin selon les réseaux.\n\nLe modèle en couches autorise le dépannage méthodique : on vérifie le câble, puis la liaison, puis l'adressage IP, puis le routage, puis le service.\n\nÀ retenir : on ne dépanne pas en priant, on descend les couches une à une. Chaque entête dit à qui parler et pour quoi faire."
+ },
+ {
+  "matiere": "RESAPP",
+  "numero": 2,
+  "titre": "Adressage IPv4, sous-réseaux et routage",
+  "fichier": "RESAPP/chapitre-2.docx",
+  "texte": "Chapitre 2 — Adressage IPv4, sous-réseaux et routage\n\nUne adresse IP combine un numéro de réseau et un numéro d'hôte ; le masque indique la frontière entre les deux.\n\nIPv4 est un nombre de 32 bits écrit en quatre octets. Le /24 équivaut au masque 255.255.255.0 et laisse 254 adresses utilisables, le réseau et la diffusion étant réservés.\n\nLe découpage en sous-réseaux emprunte des bits à l'hôte pour créer des réseaux plus petits et limiter le trafic de diffusion.\n\nLa passerelle par défaut est l'adresse du routeur du réseau local : sans elle, un hôte ne parle qu'à son propre segment.\n\nUn routeur compare la destination à sa table de routage, choisit l'entrée la plus spécifique, puis la route par défaut sinon.\n\nLe DHCP attribue automatiquement adresse, masque, passerelle et serveurs DNS, ce qui évite les doublons et les fautes de saisie sur un parc.\n\nÀ retenir : deux hôtes ne se joignent que si le routeur sait où envoyer. Planifier le plan d'adressage avant d'équiper les machines."
+ },
+ {
+  "matiere": "RESAPP",
+  "numero": 3,
+  "titre": "TCP, UDP et transport applicatif",
+  "fichier": "RESAPP/chapitre-3.docx",
+  "texte": "Chapitre 3 — TCP, UDP et transport applicatif\n\nLe niveau transport livre les données au bon programme grâce aux ports, et choisit le niveau de garantie.\n\nTCP est fiable et ordonné : ouverture en trois temps, accusés de réception, retransmission, contrôle de congestion. UDP est sans connexion et sans garantie, mais rapide.\n\nUn segment TCP porte les ports source et destination, le numéro de séquence et la fenêtre. Un port bien connu est inférieur à 1024, comme 80 pour HTTP et 443 pour HTTPS.\n\nLe débit utile dépend de la fenêtre et du round-trip time : une latence élevée vide la fenêtre même avec une bande passante correcte.\n\nUDP convient aux flux tolérant une perte, voix sur IP, visio, requêtes DNS, et au multicast.\n\nLe NAT réécrit les adresses privées en adresse publique et complique les connexions entrantes, d'où la nécessité de redirections ou de règles de percée.\n\nÀ retenir : TCP pour ce qui doit arriver intact, UDP pour ce qui doit arriver vite. Le choix du protocole fait partie de la conception de l'application."
+ },
+ {
+  "matiere": "RESAPP",
+  "numero": 4,
+  "titre": "DNS, HTTP et services du réseau",
+  "fichier": "RESAPP/chapitre-4.docx",
+  "texte": "Chapitre 4 — DNS, HTTP et services du réseau\n\nLes services applicatifs transforment une connectivité brute en usage réel : trouver une machine, lui demander une page, transférer un fichier.\n\nLe DNS résout un nom en adresse IP par une chaîne de serveurs : cache local, serveur récursif, puis les serveurs autoritaires racine, TLD, domaine.\n\nUn enregistrement A donne une IPv4, AAAA une IPv6, CNAME un alias, MX un serveur de courrier, TXT une information texte comme une clé SPF.\n\nHTTP est un protocole requête-réponse sans état, avec des méthodes GET, POST, PUT, DELETE et des codes de retour : 2xx succès, 3xx redirection, 4xx erreur du client, 5xx erreur du serveur.\n\nHTTPS ajoute TLS : authentification par certificat, échange de clés, chiffrement symétrique de la session. Une chaîne de certificats invalide provoque un refus du navigateur.\n\nUn time to live trop long retarde un changement d'adresse, un TTL trop court augmente la charge des serveurs DNS ; on aligne la valeur sur la fréquence réelle des modifications.\n\nÀ retenir : la plupart des pannes applicatives sont des pannes de résolution ou de certificats, pas de câbles. On vérifie le nom, puis le chemin, puis le service."
+ },
+ {
+  "matiere": "RESAPP",
+  "numero": 5,
+  "titre": "Sécurité réseau, VLAN et disponibilité",
+  "fichier": "RESAPP/chapitre-5.docx",
+  "texte": "Chapitre 5 — Sécurité réseau, VLAN et disponibilité\n\nSegmenter le réseau réduit la surface d'attaque et contient une panne au lieu de la propager.\n\nUn VLAN découpe un switch en plusieurs réseaux logiques : le service, la direction et les objets isolés ne se parlent que par un routeur ou un pare-feu.\n\nUn pare-feu applique une politique par défaut refusant tout ce qui n'est pas autorisé, filtrant par adresse, port et protocole, parfois par application.\n\nLa détection d'intrusion surveille le trafic, la prévention bloque ; sans visibilité sur le trafic, l'alerte reste un bruit de plus.\n\nLa redondance de chemin et de passerelle, par protocole de spanning tree et VRRP, évite la boucle de couche deux et le point de défaillance unique.\n\nLa supervision mesure débit, latence, perte de paquets et disponibilité. Sans historique, aucune capacité de prévoir une saturation avant l'incident.\n\nÀ retenir : segmenter, refuser par défaut, mesurer. Un réseau sûr est un réseau dont on connaît le trafic réel."
+ },
+ {
+  "matiere": "ALGO",
+  "numero": 1,
+  "titre": "Algorithmique, variables et types",
+  "fichier": "ALGO/chapitre-1.docx",
+  "texte": "Chapitre 1 — Algorithmique, variables et types\n\nUn algorithme est une suite finie d'instructions non ambiguës qui transforme une entrée en sortie.\n\nUne variable nomme une valeur d'un type donné : entier, réel, caractère, booléen. Son contenu change, son type non.\n\nL'affectation évalue l'expression de droite puis range le résultat dans la variable de gauche ; lire une variable non initialisée est une erreur de conception.\n\nUne expression se déroule selon la précédence des opérateurs, et les parenthèses rendent l'ordre explicite plutôt que de le deviner.\n\nUne conversion implicite peut perdre de l'information, par exemple un réel vers un entier. On explicite les conversions et on contrôle les bornes.\n\nLa lisibilité fait partie de la correction : noms évocateurs, une instruction par ligne, indentation régulière.\n\nÀ retenir : un bon algorithme se lit avant de s'exécuter. Si un humain ne le comprend pas, la machine l'exécutera mal."
+ },
+ {
+  "matiere": "ALGO",
+  "numero": 2,
+  "titre": "Conditions et structures de choix",
+  "fichier": "ALGO/chapitre-2.docx",
+  "texte": "Chapitre 2 — Conditions et structures de choix\n\nLe programme doit réagir différemment selon l'état des données, et c'est la structure conditionnelle qui encode ce jugement.\n\nSi condition alors instructions sinon alternatives, fin si. La condition est une expression booléenne, pas une valeur arbitraire.\n\nLes opérateurs logiques et, ou, non combinent des conditions simples ; la loi de De Morgan transforme la négation d'une conjonction en disjonction de négations.\n\nUn test court-circuite dès que le résultat est connu, ce qui protège l'évaluation d'une division par zéro placée en second membre.\n\nSelon variable faire, avec cas et défaut, remplace une longue chaîne de si quand on compare une même valeur.\n\nUn cas non prévu est une faute : on écrit toujours le défaut, et on choisit les bornes avec un test aux extrêmes.\n\nÀ retenir : une condition se conçoit avec ses valeurs de passage. Les erreurs viennent presque toujours d'une frontière mal comprise."
+ },
+ {
+  "matiere": "ALGO",
+  "numero": 3,
+  "titre": "Boucles et bornes d'itération",
+  "fichier": "ALGO/chapitre-3.docx",
+  "texte": "Chapitre 3 — Boucles et bornes d'itération\n\nRépéter une instruction jusqu'à une condition est le second pouvoir fondamental de l'algorithmique, après le choix.\n\nPour compte de début à fin pas fait un nombre connu d'itérations ; Tant que exécute tant qu'une condition reste vraie, et Faire jusqu'à exécute au moins une fois.\n\nUne boucle infinie vient d'une condition d'arrêt jamais atteinte ou d'un compteur non mis à jour dans le corps.\n\nL'invariant de boucle est une propriété vraie avant et après chaque itération ; il sert à prouver que l'algorithme termine juste.\n\nUn cumul se prépare par une variable initialisée hors de la boucle : somme à zéro, produit à un, maximum à la première valeur.\n\nSur un tableau, on préfère parcourir d'un bout à l'autre avec un indice valide plutôt que de calculer une borne qui risque de sortir.\n\nÀ retenir : écrire la condition d'arrêt avant le corps de la boucle. Une boucle se conçoit par ses bornes, pas par son contenu."
+ },
+ {
+  "matiere": "ALGO",
+  "numero": 4,
+  "titre": "Tableaux, enregistrements et recherche",
+  "fichier": "ALGO/chapitre-4.docx",
+  "texte": "Chapitre 4 — Tableaux, enregistrements et recherche\n\nTraiter beaucoup de données demande une structure qui les range et permet d'en retrouver une.\n\nUn tableau aligne des éléments d'un même type, adressés par un indice. Le premier indice est zéro dans la plupart des langages et la taille est fixe après allocation.\n\nUn enregistrement regroupe des champs de types différents, par exemple un étudiant avec nom, numéro et moyenne.\n\nLa recherche séquentielle compare un à un et fonctionne toujours, en un nombre d'opérations proportionnel à la taille. La recherche dichotomique exige un tableau trié et divise l'intervalle à chaque étape.\n\nLe remplacement d'un élément se fait par indice, l'insertion au milieu décale la fin du tableau, ce qui coûte proportionnellement au nombre d'éléments déplacés.\n\nUn tableau à deux dimensions est un tableau de tableaux, parcouru par deux indices imbriqués, avec lignes et colonnes explicites.\n\nÀ retenir : la structure choisie fixe le coût des opérations. Trier une fois permet de chercher beaucoup de fois."
+ },
+ {
+  "matiere": "ALGO",
+  "numero": 5,
+  "titre": "Fonctions, récursivité et complexité",
+  "fichier": "ALGO/chapitre-5.docx",
+  "texte": "Chapitre 5 — Fonctions, récursivité et complexité\n\nDécomposer un problème en fonctions réutilisables est ce qui rend un programme compréhensible et testable.\n\nUne fonction reçoit des paramètres, exécute un traitement et retourne un résultat. Le passage par valeur copie, le passage par référence modifie l'original.\n\nUne variable locale n'existe que pendant l'appel ; la pile d'exécution garde les appels en attente, d'où le débordement de pile quand la profondeur devient excessive.\n\nUne fonction récursive se définit par un cas de base qui termine et un cas qui se rapproche du cas de base. Sans cas de base correct, la récursion ne finit pas.\n\nLa complexité compte les opérations en fonction de la taille, notée en grand O : constant, linéaire, logarithmique, quadratique. Un double parcours imbriqué est quadratique.\n\nUne factorisation commune supprime une répétition de calcul, et une mémoire de résultats transforme souvent un algorithme exponentiel en linéaire.\n\nÀ retenir : mesurer avant d'optimiser. Un algorithme quadratique sur un grand volume se corrige par la structure, pas par le langage."
+ }
+]

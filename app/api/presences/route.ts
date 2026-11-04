@@ -1,60 +1,57 @@
-import { clientOrigin } from "@/lib/origin";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { findOne, findDocs, insertDoc, updateDoc, removeDocs } from "@/lib/db";
+import { peut } from "@/lib/permissions";
+import { routeurRetour } from "@/lib/retour";
+import { aujourdhui } from "@/lib/semaine";
 import { revalidatePath } from "next/cache";
 
+const STATUTS = ["present", "absent", "retard"];
+
 export async function POST(req: NextRequest) {
-  const session = getSession();
-  if (!session || session.role === "etudiant") {
-    return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-  }
+  const { erreur, ok, refus } = routeurRetour(req, "/presences");
+  const session = await getSession();
+  // L'appel est saisi par le professeur ; l'administration consulte seulement.
+  if (!session || !peut(session.role, "presences", "creer")) return refus();
   const form = await req.formData();
   const action = String(form.get("action") ?? "save");
-  const db = getDb();
 
   if (action === "save") {
     const matiereId = Number(form.get("matiere_id"));
     const date = String(form.get("date") ?? "");
-    const m = db.prepare(`SELECT * FROM matieres WHERE id=?`).get(matiereId) as any;
-    if (!m || (session.role === "prof" && m.prof_id !== session.id)) {
-      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return erreur("date de séance manquante ou invalide");
+    const m = await findOne("matieres", { id: matiereId });
+    if (!m || m.prof_id !== session.id) return refus();
+    if (m.statut !== "en_cours") return erreur("matière clôturée ou validée : l'appel n'est plus saisissable");
+    if (date > aujourdhui()) return erreur("pas d'appel pour une séance future");
+
+    const etudiants = await findDocs("users", { role: "etudiant", classe_id: m.classe_id, actif: 1 });
+    if (etudiants.length === 0) return erreur("aucun étudiant dans cette classe");
+    let ecrits = 0;
+    for (const e of etudiants) {
+      const statut = String(form.get(`statut_${e.id}`) ?? "present");
+      if (!STATUTS.includes(statut)) continue;
+      const existante = await findOne("presences", { date, matiere_id: matiereId, etudiant_id: e.id });
+      if (existante) await updateDoc("presences", { id: existante.id }, { statut, prof_id: session.id });
+      else await insertDoc("presences", { date, statut, matiere_id: matiereId, etudiant_id: e.id, prof_id: session.id });
+      ecrits++;
     }
-    if (m.statut !== "en_cours") {
-      return NextResponse.redirect(new URL("/presences?error=matiere+cloturee+ou+validee", clientOrigin(req)), { status: 303 });
-    }
-    if (!date) {
-      return NextResponse.redirect(new URL("/presences?error=date+manquante", clientOrigin(req)), { status: 303 });
-    }
-    const etudiants = db
-      .prepare(`SELECT id FROM users WHERE role='etudiant' AND classe_id=? AND actif=1`)
-      .all(m.classe_id) as any[];
-    const upsert = db.prepare(
-      `INSERT INTO presences (date, statut, matiere_id, etudiant_id, prof_id) VALUES (?,?,?,?,?)
-       ON CONFLICT (date, matiere_id, etudiant_id) DO UPDATE SET statut=excluded.statut, prof_id=excluded.prof_id`
-    );
-    db.transaction(() => {
-      for (const e of etudiants) {
-        const statut = String(form.get(`statut_${e.id}`) ?? "present");
-        if (["present", "absent", "retard"].includes(statut)) {
-          upsert.run(date, statut, matiereId, e.id, session.id);
-        }
-      }
-    })();
     revalidatePath("/presences");
-    return NextResponse.redirect(new URL(`/presences?matiere_id=${matiereId}&date=${date}&ok=1`, clientOrigin(req)), { status: 303 });
+    revalidatePath("/");
+    return ok(`${ecrits} étudiant(s) relevé(s) le ${date}`);
   }
 
   if (action === "delete") {
     const id = Number(form.get("id"));
-    const row = db.prepare(`SELECT * FROM presences WHERE id=?`).get(id) as any;
-    if (row && session.role === "prof") {
-      const m = db.prepare(`SELECT prof_id FROM matieres WHERE id=?`).get(row.matiere_id) as any;
-      if (!m || m.prof_id !== session.id) return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    }
-    db.prepare(`DELETE FROM presences WHERE id=?`).run(id);
+    const ligne = await findOne("presences", { id });
+    if (!ligne) return erreur("relevé introuvable");
+    const m = await findOne("matieres", { id: ligne.matiere_id });
+    if (!m || m.prof_id !== session.id) return refus();
+    if (m.statut === "valide") return erreur("matière validée : les présences sont figées");
+    await removeDocs("presences", { id });
+    revalidatePath("/presences");
+    return ok("relevé supprimé");
   }
 
-  revalidatePath("/presences");
-  return NextResponse.redirect(new URL("/presences", clientOrigin(req)), { status: 303 });
+  return erreur("action inconnue");
 }
