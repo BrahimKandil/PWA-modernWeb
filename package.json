@@ -9,7 +9,6 @@
     "db:start": "scripts\\start-mongod.bat",
     "db:ensure": "node scripts/ensure-mongo.js",
     "db:tables": "node scripts/show-collections.js",
-    "db:migrate": "node scripts/migrate-sqlite-to-mongo.js",
     "db:copy": "node scripts/copier-base.js",
     "db:cours": "node scripts/import-cours.js",
     "cours:gen": "python scripts/gen-docx.py"
@@ -24,12 +23,10 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.10",
     "@types/node": "^18.19.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.19",
-    "better-sqlite3": "^9.6.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.4.5"
