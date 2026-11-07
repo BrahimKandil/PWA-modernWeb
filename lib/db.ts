@@ -1,12 +1,16 @@
 import { MongoClient, Db, Document } from "mongodb";
 import crypto from "crypto";
-import { demarrer as demarrerMongo, enMarche as mongodEnMarche, surveille as surveillerMongo } from "../scripts/ensure-mongo";
 
 // Node 18 n'expose pas de `crypto` global, dont le pilote MongoDB 7 se sert pour ses UUID de session.
 if (!(globalThis as any).crypto) (globalThis as any).crypto = (crypto as any).webcrypto;
 
 export const MONGO_URL = process.env.MONGO_URL ?? "mongodb://127.0.0.1:27017";
 export const MONGO_DB = process.env.MONGO_DB ?? "arp_education";
+
+// Serverless : chaque instance chaude garde sa propre connection. Sans plafond bas, une
+// trentaine d'eleves simultanes sature un cluster mutualise (Atlas M0 ≈ 100 connections).
+const POOL_MAX = Number(process.env.MONGO_POOL ?? 5);
+const BASE_LOCALE = /(127\.0\.0\.1|localhost)[:/]/.test(MONGO_URL);
 
 const COLLECTIONS = [
   "classes", "users", "reset_tokens", "emails", "matieres", "salles", "emplois",
@@ -17,22 +21,20 @@ export type CollName = (typeof COLLECTIONS)[number];
 
 let client: MongoClient | null = null;
 let database: Db | null = null;
-let veilleInstallee = false;
 
 export async function getDb(): Promise<Db> {
   if (database) return database;
-  try {
-    return await ouvrir();
-  } catch (e) {
-    // La base locale ne tourne plus (redemarrage du PC) : on la relance nous-memes et on retente.
-    if (await mongodEnMarche()) throw e;
-    await demarrerMongo();
-    return await ouvrir();
-  }
+  return ouvrir();
 }
 
 async function ouvrir(): Promise<Db> {
-  client = new MongoClient(MONGO_URL, { serverSelectionTimeoutMS: 5000 });
+  // autoSelectFamily=false : activé par le pilote, mal géré par Node 18.13 (poste local), il fait
+  // échouer le handshake TLS vers Atlas. Sans effet sur Node 20/22, où Vercel exécute l'application.
+  client = new MongoClient(MONGO_URL, {
+    serverSelectionTimeoutMS: 10000,
+    maxPoolSize: POOL_MAX,
+    autoSelectFamily: false,
+  });
   try {
     await client.connect();
   } catch (e) {
@@ -42,12 +44,9 @@ async function ouvrir(): Promise<Db> {
   }
   database = client.db(MONGO_DB);
   const db = database;
-  if (!veilleInstallee) {
-    veilleInstallee = true;
-    surveillerMongo(); // mongod meurt en cours de session (fenêtre fermée, plantage) → relancé tout seul
-  }
   await ensureIndexes(db);
-  if ((await db.collection("users").estimatedDocumentCount()) === 0) await seed(db);
+  // Les comptes de demonstration (mot de passe 123456) n'ont rien a faire sur une base publiee.
+  if (BASE_LOCALE && (await db.collection("users").estimatedDocumentCount()) === 0) await seed(db);
   return db;
 }
 

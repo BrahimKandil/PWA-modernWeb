@@ -4,6 +4,8 @@ import { peut } from "@/lib/permissions";
 import { reponseAssistant } from "@/lib/assistant-ia";
 
 export const dynamic = "force-dynamic";
+// Generation Gemini (45 s de delai interne) : sans declaration, un changement de plan ramenerait la fonction a 10 s.
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const session = await getSession();

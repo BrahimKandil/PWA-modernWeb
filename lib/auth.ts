@@ -1,9 +1,9 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifyPassword, hashPassword, findOne, insertDoc, updateDoc, nowLocal } from "./db";
+import { readFileSync } from "fs";
+import path from "path";
 import crypto from "crypto";
-
-const SECRET = process.env.ARP_SECRET ?? "arp-education-demo-secret";
 
 export type Role = "admin" | "prof" | "etudiant";
 
@@ -17,8 +17,23 @@ export interface SessionUser {
   classe_id: number | null;
 }
 
+/* Le depot etant public, aucun secret ne peut etre codé en dur : avec « arp-education-demo-secret »
+   n'importe qui aurait pu fabriquer un cookie d'admin. Variable d'environnement (Vercel), sinon le
+   fichier hors depot deja lu par server-https.js (npm run dev ne passe pas par ce serveur). */
+function secret(): string {
+  const varEnv = (process.env.ARP_SECRET ?? "").trim();
+  if (varEnv) return varEnv;
+  try {
+    return readFileSync(path.join(process.cwd(), ".tunnel-secret"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
 function sign(userId: number) {
-  return crypto.createHmac("sha256", SECRET).update(String(userId)).digest("hex").slice(0, 16);
+  const s = secret();
+  if (!s) throw new Error("ARP_SECRET absent : definir la variable d'environnement ou creer .tunnel-secret");
+  return crypto.createHmac("sha256", s).update(String(userId)).digest("hex").slice(0, 16);
 }
 
 export async function login(email: string, password: string): Promise<SessionUser | null> {

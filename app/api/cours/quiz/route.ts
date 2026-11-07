@@ -8,6 +8,8 @@ import { genererQcm, corriger, type Question } from "@/lib/qcm";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
+// Generation Gemini (45 s de delai interne) : sans declaration, un changement de plan ramenerait la fonction a 10 s.
+export const maxDuration = 300;
 
 // Un QCM de chapitre compte 6 questions, le QCM global 8 : assez pour noter, pas assez pour épuiser.
 const NB_CHAPITRE = 6;

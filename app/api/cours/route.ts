@@ -8,9 +8,12 @@ import { indexerCours } from "@/lib/rag";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
+// Plongements Gemini a l'import d'un support : 300 s de marge, sinon la fonction retombe a 10 s.
+export const maxDuration = 300;
 
-// Un support de cours reste un document de quelques méga-octets : au-delà, on évite de saturer la base.
-const TAILLE_MAX = 8 * 1024 * 1024;
+// Plafond imposé par l'hébergement : une fonction serverless refuse tout corps de requête
+// (envoi comme réponse) au-delà de 4,5 Mo. Le téléchargement d'un support passe par la même limite.
+const TAILLE_MAX = 4 * 1024 * 1024;
 
 const champ = (form: FormData, nom: string) => String(form.get(nom) ?? "").trim();
 
@@ -61,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     if (depot && typeof (depot as File).arrayBuffer === "function" && (depot as File).size > 0) {
       const bytes = Buffer.from(await (depot as File).arrayBuffer());
-      if (bytes.length > TAILLE_MAX) return erreur("fichier trop lourd (8 Mo maximum)");
+      if (bytes.length > TAILLE_MAX) return erreur("fichier trop lourd (4 Mo maximum)");
       const lu = texteDepuisFichier((depot as File).name, bytes);
       if (!lu) return erreur("format non pris en charge : .docx ou .pdf uniquement");
       fichierNom = (depot as File).name;

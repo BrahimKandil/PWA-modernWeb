@@ -5,22 +5,24 @@ import { aujourdhui } from "@/lib/semaine";
 import Modal from "@/components/Modal";
 import ConfirmForm from "@/components/ConfirmForm";
 import Stats from "@/components/Stats";
+import DepotJoint from "@/components/DepotJoint";
 import { BarreFiltres, SelectFiltre } from "@/components/Filtres";
 
 export const dynamic = "force-dynamic";
 
 const parNom = (a: any, b: any) => String(a.nom).localeCompare(String(b.nom)) || String(a.prenom).localeCompare(String(b.prenom));
 
-function ChampsDepot({ assignmentId, contenu }: { assignmentId: number; contenu?: string }) {
-  return (
-    <>
-      <input type="hidden" name="action" value="depot" />
-      <input type="hidden" name="assignment_id" value={assignmentId} />
-      <textarea className="input" name="contenu" rows={4} defaultValue={contenu} placeholder="Votre compte rendu (objectifs, étapes, résultats)…" required />
-      <button className="btn-primary">Déposer</button>
-    </>
-  );
-}
+// Le nom vient de la base, l'URL l'affiche tel quel : on échappe pour éviter de casser le lien.
+const LienJointe = ({ depot }: { depot: any }) =>
+  depot.fichier_nom ? (
+    <a
+      className="badge-blue w-fit text-xs"
+      href={`/api/comptes-rendus/fichier?id=${depot.id}`}
+      title="Télécharger le support joint au dépôt"
+    >
+      📎 {String(depot.fichier_nom).slice(0, 60)}
+    </a>
+  ) : null;
 
 export default async function ComptesRendusPage({ searchParams }: { searchParams: Parametres }) {
   const session = await exiger("comptes_rendus");
@@ -228,8 +230,13 @@ export default async function ComptesRendusPage({ searchParams }: { searchParams
                 )}
 
                 {!d && ouvert && (
-                  <form action={actionFormulaire("/api/comptes-rendus", searchParams)} method="post" className="space-y-2">
-                    <ChampsDepot assignmentId={a.id} />
+                  <form
+                    action={actionFormulaire("/api/comptes-rendus", searchParams)}
+                    method="post"
+                    encType="multipart/form-data"
+                    className="space-y-2"
+                  >
+                    <DepotJoint action="depot" assignmentId={a.id} bouton="Déposer" />
                   </form>
                 )}
                 {!d && !ouvert && <p className="text-sm text-slate-400">Dépôt fermé (date limite dépassée ou matière clôturée).</p>}
@@ -238,14 +245,17 @@ export default async function ComptesRendusPage({ searchParams }: { searchParams
                   <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm space-y-2">
                     <p className="text-xs text-slate-400">Votre dépôt du {d.rendu_le} :</p>
                     <p className="whitespace-pre-wrap">{d.contenu}</p>
+                    <LienJointe depot={d} />
                     {ouvert && d.note == null && (
                       <div className="flex flex-wrap gap-2 pt-1">
                         <Modal titre="Modifier mon dépôt" bouton="Modifier" className="btn-ghost text-xs" confirmation="Remplacer le contenu de votre dépôt ?">
-                          <form action={actionFormulaire("/api/comptes-rendus", searchParams)} method="post" className="space-y-2">
-                            <input type="hidden" name="action" value="update_depot" />
-                            <input type="hidden" name="id" value={d.id} />
-                            <textarea className="input" name="contenu" rows={4} defaultValue={d.contenu} required />
-                            <button className="btn-primary">Enregistrer</button>
+                          <form
+                            action={actionFormulaire("/api/comptes-rendus", searchParams)}
+                            method="post"
+                            encType="multipart/form-data"
+                            className="space-y-2"
+                          >
+                            <DepotJoint action="update_depot" depotId={d.id} contenu={d.contenu} fichier={d.fichier_nom} bouton="Enregistrer" />
                           </form>
                         </Modal>
                         <ConfirmForm action={actionFormulaire("/api/comptes-rendus", searchParams)} method="post" className="inline" message="Retirer votre dépôt ?">
@@ -300,6 +310,7 @@ export default async function ComptesRendusPage({ searchParams }: { searchParams
                         <span className="text-xs text-slate-400">Rendu le {d.rendu_le}</span>
                       </div>
                       <p className="whitespace-pre-wrap text-slate-600">{d.contenu}</p>
+                      <LienJointe depot={d} />
                       {d.note != null ? (
                         <div className="badge-green w-fit">
                           Note : {d.note}/20{d.feedback ? ` — ${d.feedback}` : ""}

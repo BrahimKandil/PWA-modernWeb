@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>ARP Éducation — Documentation fonctionnelle et technique</title>
+<style>
+@page { size: A4 portrait; margin: 16mm 14mm 16mm 14mm; }
+body { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #1e293b; line-height: 1.45; }
+h1 { font-size: 17pt; color: #3730a3; border-bottom: 2px solid #4f46e5; padding-bottom: 3px; margin: 22px 0 10px; page-break-after: avoid; }
+h2 { font-size: 13pt; color: #4338ca; margin: 16px 0 6px; page-break-after: avoid; }
+h3 { font-size: 11.5pt; color: #0f172a; margin: 12px 0 4px; page-break-after: avoid; }
+p { margin: 5px 0; text-align: justify; }
+ul, ol { margin: 5px 0 5px 20px; }
+li { margin: 2px 0; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9pt; page-break-inside: auto; }
+th { background: #eef2ff; color: #312e81; text-align: left; }
+th, td { border: 1px solid #cbd5e1; padding: 3px 6px; vertical-align: top; }
+tr { page-break-inside: avoid; }
+code { font-family: Consolas, monospace; font-size: 9pt; background: #f1f5f9; padding: 0 3px; }
+.couverture { text-align: center; margin-top: 150px; }
+.couverture .titre { font-size: 30pt; font-weight: bold; color: #4f46e5; }
+.couverture .sous { font-size: 15pt; color: #334155; margin-top: 8px; }
+.couverture .meta { font-size: 11pt; color: #64748b; margin-top: 40px; }
+.saut { page-break-before: always; }
+.note { background: #f8fafc; border-left: 4px solid #4f46e5; padding: 6px 10px; margin: 8px 0; font-size: 10pt; }
+@media print {
+  body { font-variant-ligatures: none; font-feature-settings: "liga" 0; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="couverture">
+  <div class="titre">ARP Éducation</div>
+  <div class="sous">Documentation fonctionnelle et technique</div>
+  <div class="sous">Application web PWA — Next.js + MongoDB — gestion de scolarité</div>
+  <div class="meta">Projet — cahier des charges ARP éducation<br>Version 3.1 — 7 novembre 2026<br>Remplace la version 2.0 du 19 octobre 2026 : base MongoDB, module Cours/RAG/QCM, assistant IA, anti-robot et pièces jointes n'y figuraient pas.</div>
+</div>
+
+<div class="saut"></div>
+<h1>Sommaire</h1>
+<ol>
+  <li>Présentation du projet</li>
+  <li>Besoins fonctionnels</li>
+  <li>Besoins non fonctionnels</li>
+  <li>Matrice des autorisations</li>
+  <li>Modèle de données MongoDB</li>
+  <li>Règles de gestion et cycles de vie</li>
+  <li>Architecture technique</li>
+  <li>Interface HTTP (pages et API)</li>
+  <li>Sécurité et anti-robot</li>
+  <li>Module Cours : documents, RAG et QCM noté /20</li>
+  <li>Assistant : Gemini avec repli local</li>
+  <li>PWA : installation et mode hors ligne</li>
+  <li>Installation, démarrage, démonstration</li>
+  <li>Préparer un déploiement hébergé</li>
+  <li>Tests réalisés et résultats</li>
+  <li>Limites connues et évolutions possibles</li>
+  <li>Annexe — arborescence</li>
+</ol>
+
+<div class="saut"></div>
+<h1>1. Présentation du projet</h1>
+<p>ARP Éducation est une application web de gestion de scolarité couvrant les six domaines du cahier des charges — utilisateurs, présences et emplois du temps, matières/salles/notes, comptes rendus, réclamations et notifications — et étendue par trois modules ajoutés en cours de projet : <strong>Cours</strong> (supports, recherche sémantique et QCM auto-corrigé), <strong>assistant</strong> conversationnel en lecture seule, et <strong>mode hors ligne</strong> de l'emploi du temps pour toute l'année scolaire. Tout est développé dans un seul projet Next.js qui assure à la fois le front et le back, adossé à une base <strong>MongoDB</strong> locale, et se présente comme une application installable (PWA) utilisable sur PC et sur téléphone, en ligne comme hors ligne.</p>
+<p>Le produit compte 18 écrans, 22 points d'entrée d'API, 18 modules métier côté serveur (<code>lib/</code>), 14 composants d'interface et 17 collections. Trois rôles coexistent : <code>admin</code>, <code>prof</code>, <code>etudiant</code>. Les écritures passent exclusivement par des formulaires HTML POST suivis d'une redirection 303 : aucun JavaScript client n'est nécessaire pour modifier la donnée, ce qui rend chaque écran testable en curl et garde un rendu serveur intégral.</p>
+
+<h2>1.1 Choix structurants</h2>
+<table>
+  <tr><th>Exigence du cahier des charges</th><th>Décision réelle</th><th>Motivation</th></tr>
+  <tr><td>Base de données intégrée H2</td><td>SQLite d'abord (v1), puis <strong>MongoDB Community 8.0.10</strong> en local (v3)</td><td>H2 n'existe qu'en Java : aucun binding Node.js exploitable. SQLite était l'équivalent fonctionnel sans serveur ; MongoDB a été adopté pour se rapprocher d'un déploiement réel (documents, binaire, index, Atlas hébergé en option). Le modèle relationnel a été conservé sous forme de collections à identifiants numériques, ce qui a permis une migration scriptée sans réécrire les écrans.</td></tr>
+  <tr><td>Next.js récent</td><td>Next 13.5.11 (App Router)</td><td>La machine cible reste en Node 18.13, refus de monter de version ; les branches récentes de Next exigent Node 18.17+. Conséquence assumée : pas d'actions serveur, remplacées par des route handlers, choix homogène dans tout le projet.</td></tr>
+  <tr><td>Installable comme YouTube, PC et téléphone</td><td>Manifest et service worker écrits à la main</td><td>Répond à l'exigence sans framework PWA externe et permet une stratégie de cache entièrement documentée.</td></tr>
+  <tr><td>Fonctionner avec ou sans connexion</td><td>Capture automatique de l'emploi du temps de <strong>toute l'année scolaire</strong>, filtrée par rôle</td><td>Un bouton « Préparer le hors ligne » s'oubliait ; la sauvegarde est déclenchée à chaque navigation connectée, sans clic, et effacée à la déconnexion.</td></tr>
+  <tr><td>Contexte sécurisé pour le téléphone</td><td>Serveur HTTPS personnalisé sur le port <strong>443</strong> + certificat mkcert auto-régénéré</td><td>Chrome n'autorise l'installation PWA et les service workers qu'en HTTPS. Le port fixe évite de dicter un numéro de port à chaque changement d'adresse ; le certificat suit les adresses du poste toutes les 30 secondes, sans redémarrage.</td></tr>
+  <tr><td>Aide à l'élève</td><td>Assistant conversationnel <strong>optionnel</strong> : Gemini si une clé existe, moteur à règles sinon</td><td>Aucune fonctionnalité ne doit dépendre d'un service payant. Sans clé, l'assistant répond localement et le reste de l'application est inchangé.</td></tr>
+</table>
+
+<h2>1.2 Synthèse technologique</h2>
+<table>
+  <tr><th>Couche</th><th>Technologie</th><th>Version installée</th></tr>
+  <tr><td>Framework full-stack</td><td>Next.js (App Router, React Server Components)</td><td>13.5.11</td></tr>
+  <tr><td>Vue / runtime</td><td>React et React DOM</td><td>18.3.1</td></tr>
+  <tr><td>Langage</td><td>TypeScript (strict)</td><td>5.9.3</td></tr>
+  <tr><td>Base de données</td><td>MongoDB Community (driver officiel <code>mongodb</code>)</td><td>serveur 8.0.10 / driver 7.7.0</td></tr>
+  <tr><td>Accès aux documents</td><td>Couche maison <code>lib/db.ts</code> : ids numériques, hydratation, index, jeu de démonstration</td><td>—</td></tr>
+  <tr><td>Style</td><td>Tailwind CSS (utilitaires + classes de composants maison)</td><td>3.4.19</td></tr>
+  <tr><td>Authentification</td><td>Implémentation maison : cookie HMAC-SHA256 + hachage scrypt</td><td>—</td></tr>
+  <tr><td>Anti-robot</td><td>reCAPTCHA <strong>v2</strong> à case à cocher, activé seulement si les deux clés existent</td><td>—</td></tr>
+  <tr><td>Intelligence artificielle</td><td>API REST Gemini : contenu + plongements, repli local intégral</td><td>liste de modèles en section 11</td></tr>
+  <tr><td>PDF</td><td>Générateur maison <code>lib/pdf.ts</code>, aucune dépendance</td><td>—</td></tr>
+  <tr><td>Serveur</td><td><code>server-https.js</code> : Node <code>https</code> devant Next, port 443, certificat auto-adaptatif</td><td>Node 18.13</td></tr>
+  <tr><td>Dépendance résiduelle</td><td><code>better-sqlite3</code>, conservée pour le seul script de migration</td><td>9.6.0</td></tr>
+</table>
+<div class="saut"></div>
+<h1>2. Besoins fonctionnels</h1>
+<p>Le tableau reprend besoin par besoin l'expression du cahier des charges, l'acteur réellement habilité après la refonte des droits, et l'état de réalisation. Les besoins BF-20, BF-21, BF-25 et BF-27 ont vu leur rédaction ajustée : la refonte de septembre-octobre a déplacé certaines écritures du rôle administrateur vers le professeur ou vers l'auteur du document.</p>
+<table>
+  <tr><th>ID</th><th>Besoin</th><th>Acteur</th><th>Priorité</th><th>Réalisation</th></tr>
+  <tr><td>BF-01</td><td>Un compte administrateur unique, fixe, pré-existant</td><td>Système</td><td>Obligatoire</td><td>Compte <code>admin@arp.edu</code> présent au démarrage ; la ligne est marquée « protégé » dans l'écran Utilisateurs et aucune action n'est proposée dessus</td></tr>
+  <tr><td>BF-02</td><td>Créer les comptes professeur et étudiant à partir de leur adresse électronique</td><td>Admin</td><td>Obligatoire</td><td>Module Utilisateurs ; le mot de passe n'est pas saisi, le champ reste vide jusqu'à l'activation</td></tr>
+  <tr><td>BF-03</td><td>Envoyer un courriel demandant la définition du mot de passe</td><td>Système</td><td>Obligatoire</td><td>Invitation consignée dans la boîte d'envoi (module Emails) avec lien <code>/reset?token=…</code></td></tr>
+  <tr><td>BF-04</td><td>Le destinataire définit son mot de passe, puis se connecte</td><td>Prof / Étudiant</td><td>Obligatoire</td><td>Page publique <code>/reset</code> ; jeton à usage unique ; connexion bloquée tant que le mot de passe n'est pas défini</td></tr>
+  <tr><td>BF-05</td><td>Renvoyer l'invitation si nécessaire</td><td>Admin</td><td>Souhaité</td><td>Bouton « Renvoyer l'email », qui bascule sur « Nouveau mot de passe » dès que le compte est activé</td></tr>
+  <tr><td>BF-06</td><td>Définir les salles</td><td>Admin</td><td>Obligatoire</td><td>Module Salles : nom, bâtiment, capacité, type (salle, amphi, laboratoire), usage réel par créneaux</td></tr>
+  <tr><td>BF-07</td><td>Créer chaque année des classes à partir des comptes étudiants</td><td>Admin</td><td>Obligatoire</td><td>Module Classes : nom, filière, année scolaire ; vues grille et liste</td></tr>
+  <tr><td>BF-08</td><td>Sélectionner les étudiants dans une classe, à tout moment</td><td>Admin</td><td>Obligatoire</td><td>Interface à cases à cocher ; le retrait de l'ancienne classe et l'affectation se font dans la même écriture</td></tr>
+  <tr><td>BF-09</td><td>Créer les matières avec coefficient, professeur, salles et volume horaire</td><td>Admin</td><td>Obligatoire</td><td>Module Matières : code, nom, coefficient, heures, classe, professeur responsable</td></tr>
+  <tr><td>BF-10</td><td>Notifier par courriel après création d'une matière</td><td>Système</td><td>Obligatoire</td><td>Courriel d'affectation au professeur à la création comme au réaffectation, avec lien vers son module Notes</td></tr>
+  <tr><td>BF-11</td><td>Chaque semaine, définir le programme de la classe</td><td>Admin</td><td>Obligatoire</td><td>Éditeur hebdomadaire en popup : classe + lundi de semaine, deux créneaux par jour</td></tr>
+  <tr><td>BF-12</td><td>Maximum deux matières par jour, trois heures chacune</td><td>Règle</td><td>Obligatoire</td><td>Créneaux imposés 09:00–12:00 et 13:00–16:00 ; index unique (classe, semaine, jour, créneau) côté MongoDB</td></tr>
+  <tr><td>BF-13</td><td>Récupérer l'emploi du temps en PDF</td><td>Tous</td><td>Obligatoire</td><td>Bouton « Télécharger en PDF » : <code>lib/pdf.ts</code> produit un A4 paysage côté serveur, renvoyé en pièce jointe ; un bouton « Imprimer » reste disponible</td></tr>
+  <tr><td>BF-14</td><td>Le professeur consulte ses affectations</td><td>Prof</td><td>Obligatoire</td><td>Matières, Notes, Présences, Comptes rendus, Cours et Emplois filtrés sur les matières dont il a la charge</td></tr>
+  <tr><td>BF-15</td><td>Signaler les absences dans l'application</td><td>Prof</td><td>Obligatoire</td><td>Appel par séance (présent / absent / retard) sur la date choisie, upsert par étudiant</td></tr>
+  <tr><td>BF-16</td><td>Créer un compte rendu avec une durée de validité</td><td>Prof</td><td>Obligatoire</td><td>Module Comptes rendus : titre, consigne, matière, date limite. L'administrateur consulte, il ne crée plus</td></tr>
+  <tr><td>BF-17</td><td>Après expiration, vérifier les dépôts et attribuer une note</td><td>Prof</td><td>Obligatoire</td><td>Dépôts lisibles et notables (0–20 + commentaire) par le professeur responsable</td></tr>
+  <tr><td>BF-18</td><td>À la fin du cours, soumettre la clôture avec les notes d'examen final</td><td>Prof</td><td>Obligatoire</td><td>Formulaire de clôture listant tous les étudiants de la classe ; passe la matière au statut « terminée »</td></tr>
+  <tr><td>BF-19</td><td>Consulter ses absences</td><td>Étudiant</td><td>Obligatoire</td><td>Module Présences : compteurs, taux de présence, historique daté avec nom du relevé</td></tr>
+  <tr><td>BF-20</td><td>Consulter ses notes par matière et le total</td><td>Étudiant</td><td>Obligatoire</td><td>Module Notes : détail CC/TP/Examen, moyenne par matière, moyenne générale pondérée par coefficient sur les matières validées</td></tr>
+  <tr><td>BF-21</td><td>Déposer son compte rendu</td><td>Étudiant</td><td>Obligatoire</td><td>Dépôt jusqu'à la date limite, une fois par étudiant et par sujet (index unique). Le texte peut être saisi, repris d'une pièce jointe .docx/.pdf, puis modifié</td></tr>
+  <tr><td>BF-22</td><td>Télécharger son emploi du temps</td><td>Étudiant</td><td>Obligatoire</td><td>Vue forcée sur sa classe (une requête visant une autre classe est ignorée), téléchargement du PDF, mémorisation hors ligne</td></tr>
+  <tr><td>BF-23</td><td>L'administration valide la matière clôturée avant publication</td><td>Admin</td><td>Obligatoire</td><td>Bouton « Valider et publier aux étudiants », seulement depuis « terminée » ; les notes restent invisibles avant ce passage</td></tr>
+  <tr><td>BF-24</td><td>Seules les notifications créées par l'admin sont émises ; visibles par tous</td><td>Admin</td><td>Obligatoire</td><td>Formulaire réservé à l'admin ; liste globale sans filtre de destination</td></tr>
+  <tr><td>BF-25</td><td>Seuls les professeurs et étudiants créent des réclamations</td><td>Prof / Étudiant</td><td>Obligatoire</td><td>Création refusée à l'admin ; le <em>statut</em> est piloté par l'auteur seul (l'admin consulte), suppression par l'auteur tant que non traitée</td></tr>
+  <tr><td>BF-26</td><td>Terminer la semaine précédente comme base de travail</td><td>Admin</td><td>Complément</td><td>Bouton « Copier la semaine précédente »</td></tr>
+  <tr><td>BF-27</td><td>Afficher un tableau de bord adapté au rôle</td><td>Tous</td><td>Complément</td><td>Indicateurs différents par rôle, calendrier de la semaine, dernières notifications, accès direct au hors ligne</td></tr>
+</table>
+
+<h2>2.1 Besoins implicites ajoutés (non écrits dans le cahier des charges)</h2>
+<ul>
+  <li>Désactivation d'un compte plutôt que suppression, pour conserver l'historique de notes et de présences.</li>
+  <li>Suppression protégée : une matière, une salle, une classe ou un compte rendu n'est supprimable que si rien ne le référence ; le refus s'accompagne d'un message explicite renvoyé vers la page.</li>
+  <li>Validation serveur systématique : bornes de notes 0–20, types de pièce et de salle contraints, dates obligatoires, formats de fichiers limités.</li>
+  <li>Double niveau de contrôle d'accès : chaque route rejette un rôle non autorisé par un 403, indépendamment de ce que masque l'interface.</li>
+  <li>Jeu de démonstration recréé automatiquement dès que la collection <code>users</code> est vide.</li>
+  <li>Filtres portés par l'URL : toute liste se filtre en GET, donc une URL est partageable, le bouton retour fonctionne et aucune requête réseau client n'est nécessaire.</li>
+  <li>Obligation de choisir une classe avant d'afficher des données de masse, pour ne pas mélanger plusieurs promotions.</li>
+</ul>
+
+<h2>2.2 Fonctionnalités hors cahier des charges, ajoutées en cours de projet</h2>
+<table>
+  <tr><th>ID</th><th>Fonctionnalité</th><th>Acteur</th><th>Description</th></tr>
+  <tr><td>AJ-01</td><td>Supports de cours</td><td>Prof</td><td>Chapitres numérotés 1–30 par matière, importés en .docx ou .pdf, avec extraction automatique du texte ; fermeture et réouverture d'un chapitre</td></tr>
+  <tr><td>AJ-02</td><td>Recherche sémantique (RAG)</td><td>Système</td><td>Découpage du cours en passages, plongements vectoriels Gemini stockés en base, similarité cosinus pour retrouver les passages pertinents</td></tr>
+  <tr><td>AJ-03</td><td>QCM auto-corrigé noté /20</td><td>Étudiant</td><td>6 questions par chapitre, 8 pour le QCM global, une seule tentative, correction immédiate, copie consultable</td></tr>
+  <tr><td>AJ-04</td><td>Tableaux de bord quiz</td><td>Prof / Étudiant</td><td>Copies, moyennes et taux de réussite par chapitre et par matière ; l'élève ne voit que la sienne</td></tr>
+  <tr><td>AJ-05</td><td>Assistant conversationnel</td><td>Tous</td><td>Bulle flottante, réponses en lecture seule, restreintes au compte, 5 familles de refus, quota journalier, suggestions cliquables</td></tr>
+  <tr><td>AJ-06</td><td>Pièce jointe au compte rendu</td><td>Étudiant</td><td>Dépôt .docx/.pdf jusqu'à 8 Mo, stockage en binaire dans le dépôt, texte extrait pré-rempli dans la zone de rédaction, téléchargement contrôlé</td></tr>
+  <tr><td>AJ-07</td><td>Anti-robot à la connexion</td><td>Système</td><td>reCAPTCHA v2 avec case à cocher sur l'écran de connexion, jeton vérifié côté serveur, refus motivé dans la sortie du serveur</td></tr>
+  <tr><td>AJ-08</td><td>Hors ligne automatique</td><td>Tous</td><td>Capture de toutes les semaines de l'année scolaire, filtrée par rôle, sans bouton à presser</td></tr>
+  <tr><td>AJ-09</td><td>Refonte des droits par matrice</td><td>Système</td><td>Une table unique <code>MATRICE[role][module]</code> pour 13 modules et 4 verbes, lue à la fois par les pages et par les API</td></tr>
+  <tr><td>AJ-10</td><td>Consultation de l'emploi du temps par salle</td><td>Tous</td><td>Filtre <code>salle_id</code> sur l'écran Emploi du temps, lien inverse depuis l'inventaire des salles</td></tr>
+</table>
+
+<div class="saut"></div>
+<h1>3. Besoins non fonctionnels</h1>
+<table>
+  <tr><th>ID</th><th>Exigence</th><th>Implémentation</th></tr>
+  <tr><td>BNF-01</td><td>Application installable (PC et mobile)</td><td>Manifest <code>/manifest.webmanifest</code> : nom, icône 1024 px en versions « any » et « maskable », affichage standalone, thème <code>#4f46e5</code>. Enregistrement du service worker par un micro-composant client.</td></tr>
+  <tr><td>BNF-02</td><td>Utilisable hors connexion</td><td>Service worker maison, cache unique versionné <code>arp-v6</code> : navigations en « réseau d'abord, puis cache, puis page hors ligne », statiques en « cache d'abord », API jamais mise en cache sauf la capture.</td></tr>
+  <tr><td>BNF-03</td><td>Le hors ligne doit afficher le calendrier</td><td>La page <code>/offline</code> rend la grille 5 jours × 2 créneaux de la semaine courante ; un sélecteur relit la capture JSON pour les autres semaines de l'année.</td></tr>
+  <tr><td>BNF-04</td><td>Adapté au téléphone</td><td>Mise en page responsive : barre latérale <code>w-60</code> à partir de 768 px, barre de navigation basse défilante en dessous ; tableaux à défilement horizontal ; popup d'assistant plein écran sur mobile.</td></tr>
+  <tr><td>BNF-05</td><td>Sécurité de session</td><td>Cookie httpOnly, SameSite=Lax, signature HMAC-SHA256, durée 30 jours ; mots de passe hachés avec scrypt et sel aléatoire ; comparaison à temps constant.</td></tr>
+  <tr><td>BNF-06</td><td>Aucune exposition de requête après rechargement</td><td>Toute écriture répond par une redirection 303 ; le motif est détaillé en section 7.3.</td></tr>
+  <tr><td>BNF-07</td><td>Base ne demandant aucune administration</td><td>MongoDB lancé par le projet lui-même : <code>server-https.js</code> appelle le script de démarrage, surveille le port et relance au besoin ; schéma et index créés au premier appel, jeu de démonstration inséré si la base est vide.</td></tr>
+  <tr><td>BNF-08</td><td>Transparent sur le canal d'envoi réel</td><td>Courriels simulés et historisés dans une collection dédiée consultable ; la section 15 explique le passage à SMTP.</td></tr>
+  <tr><td>BNF-09</td><td>Langue</td><td>Interface intégralement en français, dates au format français, identifiants de code en français aussi (variables et commentaires).</td></tr>
+  <tr><td>BNF-10</td><td>Résilience vis-à-vis de l'IA</td><td>Chaque fonctionnalité « IA » a un repli local : assistant à règles, QCM construit sur les phrases du cours, recherche par recouvrement de mots. Sans clé, l'application reste complète.</td></tr>
+  <tr><td>BNF-11</td><td>Maîtrise du coût</td><td>Quota de 40 questions IA par compte et par jour, délai maximum de 45 secondes par appel, contexte limité à 4200 caractères, modèle réessayé sur erreur 400/404/429/5xx puis abandon.</td></tr>
+  <tr><td>BNF-12</td><td>Étanchéité des données entre comptes</td><td>Le snapshot envoyé au modèle est construit à partir de la session appelante ; une requête sur une autre classe est ignorée côté serveur ; les pièces jointes ne sont servies qu'à leur auteur, au professeur responsable et à l'admin.</td></tr>
+  <tr><td>BNF-13</td><td>Aucune requête SQL, donc pas d'injection</td><td>Les filtres sont construits en objets passés au driver (paramètres jamais concaténés dans une chaîne), y compris dans les recherches par mot-clé.</td></tr>
+</table>
+
+<div class="saut"></div>
+<h1>4. Matrice des autorisations</h1>
+<p>La source unique de vérité est <code>lib/permissions.ts</code> : une table <code>MATRICE[role][module]</code> associant à chaque couple un ensemble de verbes parmi <code>voir · creer · modifier · supprimer</code>. Les écrans appellent <code>await exiger(module, verbe)</code> — non connecté renvoie vers <code>/login</code>, droit absent renvoie vers le tableau de bord avec le motif « accès refusé » — et les routes d'API commencent par <code>if (!session || !peut(session.role, module, verbe)) return refus()</code>. Les deux niveaux lisant la même table, ils ne peuvent plus diverger.</p>
+<p class="note">La matrice ne dit pas tout : la <strong>propriété</strong> est vérifiée en plus, action par action. Un professeur n'écrit que dans les matières dont il est responsable, un étudiant que dans son propre dépôt, son propre appel et sa propre réclamation.</p>
+<table>
+  <tr><th>Module</th><th>Admin</th><th>Professeur</th><th>Étudiant</th></tr>
+  <tr><td>Utilisateurs</td><td>voir · creer · modifier · supprimer</td><td>—</td><td>—</td></tr>
+  <tr><td>Classes</td><td>tout</td><td>voir</td><td>voir</td></tr>
+  <tr><td>Emails</td><td>tout</td><td>voir</td><td>voir</td></tr>
+  <tr><td>Salles</td><td>tout</td><td>voir</td><td>voir</td></tr>
+  <tr><td>Matières</td><td>tout</td><td>voir</td><td>voir</td></tr>
+  <tr><td>Emplois</td><td>voir · creer · modifier</td><td>voir</td><td>voir</td></tr>
+  <tr><td>Présences</td><td>voir</td><td>voir · creer · modifier</td><td>voir</td></tr>
+  <tr><td>Notes</td><td>voir</td><td>voir · creer · modifier</td><td>voir</td></tr>
+  <tr><td>Comptes rendus</td><td>voir</td><td>tout</td><td>tout</td></tr>
+  <tr><td>Réclamations</td><td>voir</td><td>tout</td><td>tout</td></tr>
+  <tr><td>Notifications</td><td>tout</td><td>voir</td><td>voir</td></tr>
+  <tr><td>Assistant</td><td>voir</td><td>voir</td><td>voir</td></tr>
+  <tr><td>Cours</td><td>— (module invisible)</td><td>tout</td><td>voir · creer (sa passation de quiz uniquement)</td></tr>
+</table>
+<p>Decisions non évidentes, à assumer en soutenance :</p>
+<ul>
+  <li><strong>Admin = consultation seule</strong> sur notes, présences, comptes rendus et réclamations : il valide une matière mais n'écrit pas à la place du professeur, et seul l'auteur d'une réclamation pilote son statut.</li>
+  <li><strong>Saisie réservée au professeur</strong> : appel, notes CC/TP, clôture, correction de compte rendu, chapitres de cours.</li>
+  <li><strong>Prof et étudiant ne voient pas Utilisateurs</strong> — le lien est retiré de la barre latérale et la page refuse ; ils accèdent en revanche à Classes, Emails et à l'assistant.</li>
+  <li>Le verbe <code>creer</code> côté étudiant sur Cours ne permet que de démarrer <em>sa</em> tentative de quiz, jamais de toucher un chapitre.</li>
+</ul>
+<div class="saut"></div>
+<h1>5. Modèle de données MongoDB</h1>
+<p>Dix-sept collections plus une collection technique <code>counters</code>. Le choix a été fait de conserver un modèle <strong>relationnel</strong> malgré Mongo : chaque document porte un <code>_id</code> <strong>entier</strong> distribué par un compteur atomique (<code>findOneAndUpdate</code> avec <code>$inc</code> et <code>upsert</code>), et les références entre documents restent des entiers. Cela rend la migration depuis SQLite directe, conserve des URLs lisibles (<code>/cours/12</code>) et permet aux écrans de rester inchangés. Les contraintes d'intégrité que Mongo ne vérifie pas nativement sont imposées par des <strong>index uniques</strong>.</p>
+<p>La couche d'accès <code>lib/db.ts</code> expose six fonctions utilisées partout : <code>findDocs(collection, filtre, {sort, limit, skip})</code>, <code>findOne</code>, <code>countDocs</code>, <code>insertDoc</code>, <code>updateDoc</code> (retourne le nombre de documents touchés), <code>removeDocs</code>. À la lecture, <code>hydrate</code> renomme <code>_id</code> en <code>id</code> ; à l'écriture, <code>denormalize</code> fait l'inverse dans les filtres. Les dates sont stockées en texte local, au format <code>YYYY-MM-DD</code> ou <code>YYYY-MM-DD HH:mm</code> (<code>nowLocal()</code>), jamais en <code>Date</code> UTC : c'est ce qui rend les filtres par jour et par semaine prévisibles. <code>isDup</code> reconnaît le code Mongo 11000 et transforme le doublon en message d'erreur métier.</p>
+<p>La connexion se relance elle-même : <code>getDb()</code> teste le port, et si <code>mongod</code> n'écoute pas, exécute le script de démarrage avant de retenter, ce qui explique qu'un redémarrage du PC suffise à faire repartir l'application complète. Les index sont créés à la première ouverture (<code>ensureIndexes</code>) et le jeu de démonstration est inséré dès que <code>users.estimatedDocumentCount()</code> vaut 0.</p>
+
+<h2>5.1 Vue d'ensemble des relations</h2>
+<table>
+  <tr><th>Entité</th><th>Rôle</th><th>Relations</th></tr>
+  <tr><td>classes</td><td>Groupe d'étudiants d'une filière pour une année</td><td>1 — N users, 1 — N matieres, 1 — N emplois</td></tr>
+  <tr><td>users</td><td>Compte (admin, professeur ou étudiant)</td><td>N — 1 classes ; 1 — N matieres comme responsable ; 1 — N notes, presences, reclamations, cr_depots, quiz_passations</td></tr>
+  <tr><td>reset_tokens</td><td>Jeton d'invitation ou de changement de mot de passe</td><td>N — 1 users</td></tr>
+  <tr><td>emails</td><td>Boîte d'envoi (courriels simulés)</td><td>destinataire par adresse, sans clé étrangère</td></tr>
+  <tr><td>matieres</td><td>Enseignement avec coefficient, volume horaire et statut</td><td>N — 1 classes, N — 1 users, 1 — N emplois, notes, presences, cr_assignments, cours</td></tr>
+  <tr><td>salles</td><td>Lieu physique</td><td>1 — N emplois</td></tr>
+  <tr><td>emplois</td><td>Créneau d'une semaine donnée</td><td>N — 1 classes, N — 1 matieres, N — 1 salles</td></tr>
+  <tr><td>presences</td><td>Pointage d'un étudiant à une séance</td><td>N — 1 matieres, N — 1 users (étudiant), N — 1 users (professeur ayant relevé)</td></tr>
+  <tr><td>notes</td><td>Note CC, TP ou examen</td><td>N — 1 matieres, N — 1 users</td></tr>
+  <tr><td>cr_assignments</td><td>Compte rendu demandé avec date limite</td><td>N — 1 matieres, N — 1 users, 1 — N cr_depots</td></tr>
+  <tr><td>cr_depots</td><td>Remise d'un étudiant, avec pièce jointe binaire éventuelle</td><td>N — 1 cr_assignments, N — 1 users</td></tr>
+  <tr><td>reclamations</td><td>Réclamation ouverte par un professeur ou un étudiant</td><td>N — 1 users</td></tr>
+  <tr><td>notifications</td><td>Annonce globale créée par l'administration</td><td>sans destinataire : visible par tous</td></tr>
+  <tr><td>cours</td><td>Chapitre d'un support de cours, texte extrait + fichier d'origine</td><td>N — 1 matieres, N — 1 users (créateur), 1 — N cours_passages</td></tr>
+  <tr><td>cours_passages</td><td>Passage indexé pour la recherche sémantique</td><td>N — 1 cours, N — 1 matieres</td></tr>
+  <tr><td>quiz_passations</td><td>Tentative de QCM d'un étudiant, notée /20</td><td>N — 1 users, N — 1 matieres, N — 1 cours (nullable pour le QCM global)</td></tr>
+  <tr><td>assistant_usage</td><td>Compteur de questions IA par compte et par jour</td><td>N — 1 users</td></tr>
+</table>
+
+<h2>5.2 Dictionnaire détaillé</h2>
+<h3>classes</h3>
+<table>
+  <tr><th>Champ</th><th>Type</th><th>Contraintes</th><th>Description</th></tr>
+  <tr><td>id</td><td>Number</td><td>_id, distribué par counters</td><td>Identifiant</td></tr>
+  <tr><td>nom</td><td>String</td><td>unique, forcé en majuscules</td><td>Sigle du groupe, ex. INFO-2A</td></tr>
+  <tr><td>filiere</td><td>String</td><td>NOT NULL</td><td>Filière, ex. Informatique</td></tr>
+  <tr><td>annee</td><td>String</td><td>NOT NULL</td><td>Année scolaire, ex. 2026-2027</td></tr>
+</table>
+<h3>users</h3>
+<table>
+  <tr><th>Champ</th><th>Type</th><th>Contraintes</th><th>Description</th></tr>
+  <tr><td>id</td><td>Number</td><td>_id</td><td>Identifiant</td></tr>
+  <tr><td>nom / prenom</td><td>String</td><td>NOT NULL</td><td>Identité affichée</td></tr>
+  <tr><td>email</td><td>String</td><td>unique</td><td>Identifiant de connexion, normalisé en minuscules</td></tr>
+  <tr><td>mot_de_passe</td><td>String ou null</td><td>NULL autorisé</td><td><code>sel:hachage</code> scrypt ; null tant que l'invitation n'est pas activée</td></tr>
+  <tr><td>role</td><td>String</td><td>admin, prof ou etudiant</td><td>Rôle applicatif</td></tr>
+  <tr><td>classe_id</td><td>Number ou null</td><td>référence classes</td><td>Classe de l'étudiant ; null pour un professeur ou l'admin</td></tr>
+  <tr><td>actif</td><td>Number (0|1)</td><td>défaut 1</td><td>Compte désactivé = refus de connexion</td></tr>
+</table>
+<h3>reset_tokens · emails</h3>
+<table>
+  <tr><th>Collection</th><th>Champs</th><th>Notes</th></tr>
+  <tr><td>reset_tokens</td><td>token, user_id, cree_le, utilise</td><td>Jetons de 48 caractères hexadécimaux aléatoires ; marqué consommé après usage, un jeton utilisé est refusé. Sans expiration temporelle.</td></tr>
+  <tr><td>emails</td><td>destinataire, sujet, contenu, lien, cree_le</td><td>Boîte d'envoi simulée ; <code>lien</code> commence toujours par <code>/</code>, ce qui permet le bouton « Ouvrir le lien » sans autoriser une URL externe.</td></tr>
+</table>
+<h3>matieres</h3>
+<table>
+  <tr><th>Champ</th><th>Type</th><th>Contraintes</th><th>Description</th></tr>
+  <tr><td>code</td><td>String</td><td>unique, majuscules</td><td>Sigle, ex. DEVWEB</td></tr>
+  <tr><td>nom</td><td>String</td><td>NOT NULL</td><td>Libellé</td></tr>
+  <tr><td>coefficient</td><td>Number</td><td>défaut 1, interface 1–6</td><td>Pondération de la moyenne générale</td></tr>
+  <tr><td>heures</td><td>Number</td><td>défaut 6, interface ≥ 1</td><td>Volume horaire prévu</td></tr>
+  <tr><td>statut</td><td>String</td><td>en_cours, termine ou valide</td><td>Cycle de vie — voir section 6.2</td></tr>
+  <tr><td>prof_id</td><td>Number ou null</td><td>référence users</td><td>Responsable pédagogique</td></tr>
+  <tr><td>classe_id</td><td>Number</td><td>référence classes</td><td>Groupe concerné</td></tr>
+</table>
+<h3>salles · emplois</h3>
+<table>
+  <tr><th>Collection</th><th>Champs</th><th>Contraintes</th></tr>
+  <tr><td>salles</td><td>nom, batiment, capacite, type</td><td>nom unique ; type parmi salle, amphi, labo</td></tr>
+  <tr><td>emplois</td><td>semaine_debut, jour, creneau, heure_debut, heure_fin, classe_id, matiere_id, salle_id</td><td>index unique <code>(classe_id, semaine_debut, jour, creneau)</code> — deux matières au plus par jour ; index simple sur <code>semaine_debut</code> pour les requêtes de semaine</td></tr>
+</table>
+<p>Les horaires ne sont pas saisis : ils sont imposés par le créneau (1 = 09:00–12:00, 2 = 13:00–16:00).</p>
+<h3>presences · notes</h3>
+<table>
+  <tr><th>Collection</th><th>Champs</th><th>Contraintes</th></tr>
+  <tr><td>presences</td><td>date, statut, matiere_id, etudiant_id, prof_id</td><td>statut parmi present, absent, retard ; index unique <code>(date, matiere_id, etudiant_id)</code> — l'enregistrement actualise au lieu de dupliquer ; index simple sur <code>etudiant_id</code></td></tr>
+  <tr><td>notes</td><td>valeur, type, date, matiere_id, etudiant_id</td><td>valeur bornée 0–20 côté serveur, pas de 0,25 accepté ; type parmi CC, TP, EXAM ; index simple <code>(matiere_id, etudiant_id)</code> pour les moyennes</td></tr>
+</table>
+<h3>cr_assignments · cr_depots</h3>
+<table>
+  <tr><th>Collection</th><th>Champs</th><th>Contraintes</th></tr>
+  <tr><td>cr_assignments</td><td>titre, consigne, matiere_id, prof_id, date_limite, cree_le</td><td>titre, consigne, matière et date limite obligatoires</td></tr>
+  <tr><td>cr_depots</td><td>assignment_id, etudiant_id, contenu, rendu_le, note, feedback, fichier, fichier_nom, fichier_type, taille_octets</td><td>index unique <code>(assignment_id, etudiant_id)</code> — un dépôt par étudiant et par sujet ; note null tant que non corrigée ; <code>fichier</code> est un binaire BSON (Buffer) et non une chaîne ; <code>fichier_type</code> vaut docx ou pdf</td></tr>
+</table>
+<h3>reclamations · notifications</h3>
+<table>
+  <tr><th>Collection</th><th>Champs</th><th>Contraintes</th></tr>
+  <tr><td>reclamations</td><td>objet, message, type, statut, user_id, cree_le</td><td>type parmi note, emploi, salle, autre ; statut parmi ouvert, en_cours, traite, piloté par l'auteur</td></tr>
+  <tr><td>notifications</td><td>titre, message, lue, cree_le</td><td><code>lue</code> est un champ réservé : les annonces étant globales, l'accusé individuel n'est pas exposé</td></tr>
+</table>
+<h3>cours · cours_passages · quiz_passations · assistant_usage</h3>
+<table>
+  <tr><th>Collection</th><th>Champs</th><th>Contraintes</th></tr>
+  <tr><td>cours</td><td>matiere_id, numero, titre, texte, fichier_nom, fichier_type, fichier, taille_octets, terme, cree_par, cree_le, modifie_le</td><td>index unique <code>(matiere_id, numero)</code> ; numero de 1 à 30 ; texte d'au moins 300 caractères non blancs pour ouvrir le quiz ; <code>terme</code> (0|1) commande l'ouverture du quiz</td></tr>
+  <tr><td>cours_passages</td><td>cours_id, matiere_id, index, texte, vecteur</td><td>un document par passage de chapitre ; <code>vecteur</code> est un tableau de 768 nombres normalisés L2, vide si l'IA est indisponible ; index simples sur cours_id et matiere_id</td></tr>
+  <tr><td>quiz_passations</td><td>etudiant_id, matiere_id, cours_id, cle, titre, questions, reponses, note, justes, total, soumis, source, cree_le, fini_le</td><td>index unique <code>(etudiant_id, cle)</code> avec <code>cle</code> = <code>chapitre:&lt;id&gt;</code> ou <code>global:&lt;matiere_id&gt;</code> — c'est ce qui rend la seconde tentative impossible ; <code>questions</code> et <code>reponses</code> sont des tableaux embarqués</td></tr>
+  <tr><td>assistant_usage</td><td>user_id, jour, nb</td><td>un compteur par compte et par jour ; incrementé uniquement en cas de réponse IA réellement produite</td></tr>
+</table>
+
+<h2>5.3 Index et contraintes</h2>
+<table>
+  <tr><th>Collection</th><th>Index</th><th>But</th></tr>
+  <tr><td>classes, users, matieres, salles</td><td>unique sur nom / email / code / nom</td><td>Empêcher le doublon métier, même si deux onglets soumettent en parallèle</td></tr>
+  <tr><td>emplois</td><td>unique (classe, semaine, jour, créneau) + simple semaine</td><td>Deux matières par jour maximum ; lecture de la grille</td></tr>
+  <tr><td>presences</td><td>unique (date, matière, étudiant) + simple étudiant</td><td>Un pointage par séance ; historique de l'étudiant</td></tr>
+  <tr><td>notes</td><td>simple (matière, étudiant)</td><td>Calcul des moyennes</td></tr>
+  <tr><td>cr_depots</td><td>unique (sujet, étudiant)</td><td>Un dépôt par étudiant</td></tr>
+  <tr><td>cours</td><td>unique (matière, numéro)</td><td>Numérotation sans trou</td></tr>
+  <tr><td>cours_passages</td><td>simples (cours, matière)</td><td>Récupération des passages d'un chapitre ou d'une matière</td></tr>
+  <tr><td>quiz_passations</td><td>unique (étudiant, clé) + simple matière</td><td>Une seule tentative ; tableau de bord du professeur</td></tr>
+</table>
+
+<h2>5.4 Jeu de démonstration initial</h2>
+<p>Au premier démarrage, <code>lib/db.ts</code> insère 2 classes, 1 administrateur, 3 professeurs, 5 étudiants, 4 matières, 3 salles, l'emploi du temps des semaines courante et précédente, des pointages et des notes CC/TP, 2 comptes rendus avec 2 dépôts dont un corrigé, 2 réclamations, 2 notifications et 1 courriel archivé. Tous les mots de passe du jeu valent <code>123456</code>. <strong>Attention :</strong> ce rappel est écrit sur l'écran de connexion, mais il n'est vrai que sur une base neuve ; après un envoi d'invitation ou un renvoi de mot de passe, seul le compte admin conserve un mot de passe connu, et il a pu être changé.</p>
+
+<div class="saut"></div>
+<h1>6. Règles de gestion et cycles de vie</h1>
+<h2>6.1 Activation d'un compte</h2>
+<ol>
+  <li>L'admin crée le compte (rôle professeur ou étudiant, classe pour un étudiant). Le mot de passe reste null.</li>
+  <li>La création génère un jeton, l'insère dans <code>reset_tokens</code> et consigne le courriel d'invitation contenant <code>/reset?token=…</code>.</li>
+  <li>Le destinataire ouvre le lien, saisit deux fois un mot de passe d'au moins 6 caractères.</li>
+  <li>Le mot de passe est haché, le jeton marqué consommé ; toute réutilisation du lien est refusée.</li>
+  <li>La connexion devient possible. Tant que le mot de passe n'est pas défini, elle est refusée avec un message évoquant le compte non activé.</li>
+</ol>
+<h2>6.2 Cycle de vie d'une matière</h2>
+<table>
+  <tr><th>Statut</th><th>Déclencheur</th><th>Effet</th></tr>
+  <tr><td>en_cours</td><td>Création par l'admin</td><td>Saisie CC/TP autorisée au responsable ; appel possible ; création de comptes rendus et de chapitres possible ; dépôt étudiant possible ; les notes sont invisibles aux étudiants</td></tr>
+  <tr><td>termine</td><td>Clôture par le professeur, avec les notes d'examen de toute la classe</td><td>En une seule écriture : suppression des anciens EXAM de la matière, insertion des nouvelles notes, changement de statut. La matière entre dans la file « à valider » de l'admin. Aucun dépôt de compte rendu n'est plus accepté</td></tr>
+  <tr><td>valide</td><td>Bouton « Valider et publier aux étudiants » de l'admin</td><td>Uniquement depuis <code>termine</code>. Les notes deviennent lisibles par les étudiants, entrent dans la moyenne générale, et un courriel trace la publication. <strong>Plus aucune écriture</strong> sur les notes, les présences et les comptes rendus de la matière</td></tr>
+</table>
+<p>Le retour en arrière n'est pas offert : le flux est volontairement à sens unique, pour que « validée » veuille dire archivée.</p>
+<h2>6.3 Cycle de vie d'un compte rendu</h2>
+<ol>
+  <li>Le professeur crée le sujet avec date limite ; titre, consigne et matière sont obligatoires. L'admin consulte, il ne crée pas.</li>
+  <li>Avant la limite et tant que la matière est <code>en_cours</code>, chaque étudiant de la classe peut déposer une fois. Le dépôt accepte un texte, une pièce jointe .docx/.pdf, ou les deux.</li>
+  <li>Le dépôt reste modifiable et supprimable tant qu'il n'est pas noté et que le délai n'est pas dépassé.</li>
+  <li>Le professeur responsable consulte les dépôts, télécharge les pièces jointes, attribue une note 0–20 et un commentaire.</li>
+  <li>L'étudiant découvre note et retour dans son module Comptes rendus, avec le lien de sa propre pièce jointe.</li>
+</ol>
+<h2>6.4 Pièce jointe : ce qui est vérifié côté serveur</h2>
+<ul>
+  <li>Taille plafonnée à <strong>8 Mo</strong>, contrôle effectué sur la taille réelle du buffer avant tout traitement.</li>
+  <li>Formats acceptés : <strong>.docx et .pdf uniquement</strong>, déterminés par la signature du fichier (PK pour le zip d'un docx, en-tête <code>%PDF</code> puis décodage effectif), pas par l'extension déclarée.</li>
+  <li>Le nom du fichier est stocké tel quel (120 caractères maximum) mais nettoyé de tout guillemet, antislash et retour chariot avant d'être renvoyé en nom de téléchargement.</li>
+  <li>Le fichier est rangé <em>dans</em> le document du dépôt, en binaire BSON : il n'y a aucun dossier de stockage à sauvegarder, et une suppression du dépôt supprime le fichier avec lui.</li>
+  <li>Le texte extrait sert à pré-remplir la zone de rédaction, jamais à valider le dépôt : une pièce jointe scannée, dont l'extraction ne donne rien, reste acceptée et téléchargeable.</li>
+  <li>Téléchargement soumis à la même matrice que la consultation, plus la propriété : l'étudiant ne reçoit que son dépôt, le professeur que les dépôts de ses sujets, l'admin tous.</li>
+</ul>
+<h2>6.5 Droits de manipulation vérifiés côté serveur</h2>
+<ul>
+  <li>Pages réservées : <code>/users</code> exige le module Utilisateurs, que la matrice ne donne qu'à l'admin ; un professeur ou un étudiant qui l'appelle directement est renvoyé vers le tableau de bord avec le motif.</li>
+  <li>Emploi du temps : écriture admin, et chaque créneau soumis est re-vérifié (matière appartenant bien à la classe, salle existante) — une soumission fabriquée à la main est refusée.</li>
+  <li>Notes : un professeur ne saisit que dans ses matières, pour un étudiant inscrit dans la classe de la matière, et tant que la matière est « en cours ». La clôture appartient au professeur ; l'administrateur ne fait que valider.</li>
+  <li>Présences : appel limité aux matières dont le professeur a la charge ; il ne supprime que les lignes de ses matières, et uniquement tant que la matière n'est pas validée.</li>
+  <li>Comptes rendus : création réservée au professeur ; dépôt étudiant limité à sa classe, avant la date limite, une seule fois ; correction réservée au professeur responsable.</li>
+  <li>Cours : chapitre créé et modifié par le professeur responsable de la matière ; un élève ne peut ni le modifier ni fermer le chapitre ; le quiz ne peut être démarré que si le chapitre est marqué « terminé ».</li>
+  <li>Notifications : création et suppression admin uniquement. Réclamations : création par professeur ou étudiant, statut piloté par l'auteur, consultation admin.</li>
+</ul>
+<h2>6.6 Règles de l'emploi du temps</h2>
+<ul>
+  <li>Deux créneaux par jour, cinq jours : dix lignes au maximum par classe et par semaine.</li>
+  <li>Enregistrer une semaine remplace les créneaux de cette semaine pour la classe ; un créneau laissé vide devient libre.</li>
+  <li>Une salle est obligatoire dès qu'une matière est placée.</li>
+  <li>La semaine précédente peut être copiée puis ajustée.</li>
+  <li><strong>Semaine verrouillée</strong> : à partir du samedi 00:00, plus aucune écriture sur la semaine ; la fenêtre d'édition disparaît et un encart propose de préparer la semaine suivante.</li>
+</ul>
+<h2>6.7 Calcul des moyennes</h2>
+<p>Moyenne de matière = moyenne arithmétique des notes publiées (CC, TP et examen). Moyenne générale = moyenne pondérée des moyennes de matière par leur coefficient, sur les seules matières <code>valide</code>. Affichage coloré selon le seuil 10/20. Le QCM n'entre dans aucune de ces moyennes : sa note est stockée dans <code>quiz_passations</code>, consultée séparément.</p>
+<div class="saut"></div>
+<h1>7. Architecture technique</h1>
+<h2>7.1 Organisation du code</h2>
+<table>
+  <tr><th>Élément</th><th>Rôle</th></tr>
+  <tr><td><code>app/**/page.tsx</code> (18)</td><td>Composants serveur : lecture directe de MongoDB et rendu HTML. Aucun appel réseau client, sauf l'assistant et le sélecteur de semaine hors ligne</td></tr>
+  <tr><td><code>app/api/**/route.ts</code> (22)</td><td>Points d'entrée d'écriture et de lecture binaire : analyse du formulaire, contrôle du rôle et de la propriété, écriture, redirection</td></tr>
+  <tr><td><code>lib/db.ts</code></td><td>Ouverture unique et mémoïsée, distribution des identifiants, création des index, jeu de démonstration, hachage et vérification des mots de passe</td></tr>
+  <tr><td><code>lib/permissions.ts</code></td><td>Matrice des droits, <code>peut()</code> pour les API, <code>exiger()</code> pour les pages</td></tr>
+  <tr><td><code>lib/auth.ts</code></td><td>Session (cookie signé), connexion, jeton d'invitation, définition du mot de passe par jeton</td></tr>
+  <tr><td><code>lib/filtres.ts</code></td><td>Lecture des paramètres d'URL, filtres de période et d'année, pagination, construction des liens <code>?retour=</code></td></tr>
+  <tr><td><code>lib/retour.ts</code></td><td><code>routeurRetour()</code> : la seule façon de répondre après un POST, avec ses quatre helpers <code>vers / erreur / ok / refus</code></td></tr>
+  <tr><td><code>lib/semaine.ts</code></td><td>Dates locales, lundi et dimanche de semaine, libellé, règle de verrouillage du samedi</td></tr>
+  <tr><td><code>lib/origin.ts</code></td><td>Restitution de l'origine réelle de la requête pour que les redirections conviennent aussi au téléphone</td></tr>
+  <tr><td><code>lib/cours.ts</code></td><td>Extraction de texte .docx et .pdf, découpage en passages, seuil de texte suffisant</td></tr>
+  <tr><td><code>lib/rag.ts</code></td><td>Indexation sémantique, similarité cosinus, repli par recouvrement de mots, mélange déterministe</td></tr>
+  <tr><td><code>lib/qcm.ts</code></td><td>Fabrication des questions (IA puis règles locales), correction et note /20</td></tr>
+  <tr><td><code>lib/gemini.ts</code></td><td>Client REST commun : génération de contenu et plongements, liste de modèles, délais et replis</td></tr>
+  <tr><td><code>lib/assistant*.ts</code> (3)</td><td>Moteur local à règles, refus connus, quota, orchestration IA, construction du contexte par compte</td></tr>
+  <tr><td><code>lib/hors-ligne.ts</code></td><td>Emplois du temps de toute l'année scolaire, réduits au périmètre du compte appelant</td></tr>
+  <tr><td><code>lib/recaptcha.ts</code></td><td>Vérification du jeton v2 auprès de <code>siteverify</code>, activation par les clés</td></tr>
+  <tr><td><code>lib/pdf.ts</code></td><td>Générateur PDF maison : PDF 1.4, polices Helvetica de base, encodage WinAnsi pour les accents, calcul des largeurs de glyphes, page paysage ; aucune dépendance externe</td></tr>
+  <tr><td><code>lib/mail.ts</code></td><td>Consignation d'un courriel dans la collection <code>emails</code> (simulation de l'envoi)</td></tr>
+  <tr><td><code>middleware.ts</code></td><td>Garde-frontière unique : bloque pages et API sans cookie valide, laisse passer cinq chemins publics</td></tr>
+  <tr><td><code>components/</code> (13)</td><td>Sidebar, Modal, ConfirmForm, Filtres, Pagination, Stats, EmploiTableau, HorsLigneSemaines, AssistantChat, AssistantFlottant, DepotJoint, PrintButton, PwaRegister</td></tr>
+  <tr><td><code>public/</code></td><td>Manifest, service worker, icône</td></tr>
+  <tr><td><code>server-https.js</code></td><td>Démarrage HTTPS de la version produite, port 443, certificat auto-adaptatif, lancement de mongod</td></tr>
+</table>
+
+<h2>7.2 Flux d'une écriture</h2>
+<p><code>&lt;form method="post" action="/api/x"&gt;</code> → le middleware vérifie la forme du cookie → la route handler lit <code>req.formData()</code>, contrôle le rôle puis la propriété pédagogique, écrit via la couche <code>lib/db.ts</code> (objets de filtre passés au driver, jamais de concaténation), appelle <code>revalidatePath()</code> sur les pages concernées, puis répond 303 par <code>routeurRetour()</code>. Le formulaire POST emporte au passage <code>?retour=</code> contenant les filtres d'URL du moment : l'utilisateur revient donc exactement sur l'onglet, la classe, la période et la page de résultats d'où il est parti.</p>
+<h2>7.3 Pourquoi 303 plutôt qu'un autre code</h2>
+<p>Next 13 applique <code>NextResponse.redirect()</code> en 307 par défaut, ce qui invite le navigateur à rejouer le POST sur le chemin de la page. La page étant un composant serveur, le corps du formulaire n'est plus recevable : on obtenait une erreur 500 après chaque connexion et chaque formulaire. Tous les points d'écriture répondent donc explicitement en 303, qui force un rechargement en GET. Cette précision a été la source du plus grand nombre de défauts rencontrés.</p>
+<h2>7.4 Rendu, révalidation et composants client</h2>
+<p>Les écrans portant <code>export const dynamic = "force-dynamic"</code> sont rendus à la demande : les données affichées ne peuvent pas être périmées. Après une écriture, <code>revalidatePath</code> purge les pages touchées par la même requête. Neuf composants sont marqués <code>"use client"</code>, et toujours pour la même raison : un comportement qui a besoin du navigateur (dialog natif, <code>window.confirm</code>, <code>window.print()</code>, enregistrement du service worker, zone de défilement, pré-remplissage après extraction). Aucun de ces composants n'émet de requête d'écriture : les mutations restent des POST HTML ordinaires. Le widget reCAPTCHA, lui, n'a besoin d'aucun composant : c'est le script de Google qui écrit le champ du formulaire.</p>
+<h2>7.5 Particularités du serveur Node</h2>
+<p>L'application n'est pas servie par <code>next start</code> mais par <code>server-https.js</code>, un serveur <code>https</code> Node devant <code>next({dev}).getRequestHandler()</code>. Trois conséquences sont écrites dans le code :</p>
+<ul>
+  <li><strong>Le mode production est figé au build.</strong> Une route ajoutée depuis le dernier <code>npm run build</code> renvoie 404 ou reste suspendue : <code>npm run build</code> puis relance sont obligatoires.</li>
+  <li><strong><code>req.nextUrl.origin</code> n'est pas l'origine du client.</strong> Il vaut l'adresse interne de Next ; sans <code>clientOrigin(req)</code>, toute redirection depuis un téléphone renverrait sur un <code>localhost</code> injoignable.</li>
+  <li><strong>Le port est fixé à 443</strong>, sans repli : une seule URL, sans numéro de port à dicter. Le serveur écoute sur <code>0.0.0.0</code>, l'adresse affichée au démarrage est relue sur les interfaces réseau en écartant les cartes virtuelles.</li>
+</ul>
+
+<div class="saut"></div>
+<h1>8. Interface HTTP</h1>
+<h2>8.1 Pages</h2>
+<table>
+  <tr><th>Chemin</th><th>Contenu</th><th>Accès</th></tr>
+  <tr><td>/</td><td>Tableau de bord selon le rôle : 4 à 5 indicateurs, calendrier de la semaine 5×2, trois dernières notifications, accès au hors ligne</td><td>connecté</td></tr>
+  <tr><td>/login</td><td>Connexion, bandeaux d'erreur, d'activation et d'anti-robot, rappel des comptes de démonstration, case à cocher reCAPTCHA</td><td>public</td></tr>
+  <tr><td>/reset</td><td>Définition du mot de passe depuis un jeton</td><td>public</td></tr>
+  <tr><td>/offline</td><td>Bandeau « Vous êtes hors ligne », grille de la semaine courante, sélecteur des autres semaines relu depuis le cache</td><td>public</td></tr>
+  <tr><td>/users</td><td>Liste avec onglets par rôle, recherche, invitation, renvoi, activation/désactivation, suppression</td><td>admin</td></tr>
+  <tr><td>/classes</td><td>Grille ou liste par année, fiche de classe avec effectif et emploi du temps, affectation par cases à cocher</td><td>tous en lecture, écriture admin</td></tr>
+  <tr><td>/emails</td><td>Boîte d'envoi avec lien activable ; les non-admins ne voient que les messages qui leur sont adressés</td><td>tous en lecture, écriture admin</td></tr>
+  <tr><td>/salles</td><td>Inventaire, capacité, type, créneaux utilisés et matières qui y vont</td><td>tous en lecture, écriture admin</td></tr>
+  <tr><td>/matieres</td><td>Liste filtrée par année, classe et statut, bandeau de stats, file de validation, création avec notification du professeur</td><td>tous en lecture, écriture admin</td></tr>
+  <tr><td>/emplois</td><td>Grille hebdomadaire, choix classe et semaine, éditeur en popup, copie de la semaine précédente, PDF, impression, encart de semaine verrouillée</td><td>tous en lecture, écriture admin</td></tr>
+  <tr><td>/presences</td><td>Appel par matière et date pour le professeur, matrice étudiants × matières avec taux de présence, historique détaillé</td><td>tous en lecture, écriture prof</td></tr>
+  <tr><td>/notes</td><td>Saisie CC/TP en popup, grille par étudiant, clôture avec notes d'examen, moyenne publiée pour l'étudiant, moyenne générale pondérée</td><td>tous en lecture, écriture prof</td></tr>
+  <tr><td>/comptes-rendus</td><td>Sujets avec date limite, dépôts, zone de rédaction avec pièce jointe et extraction, correction, restitution à l'étudiant</td><td>prof et étudiant</td></tr>
+  <tr><td>/cours</td><td>Chapitres par matière, import de support, ouverture et fermeture du quiz, copie de quiz par chapitre, QCM global</td><td>prof et étudiant</td></tr>
+  <tr><td>/cours/[id]</td><td>Chapitre : texte, support téléchargeable, mode de recherche utilisé, édition, résultat du quiz et navigation vers le chapitre précédent/suivant</td><td>prof et étudiant</td></tr>
+  <tr><td>/cours/quiz</td><td>Trois états : règles et bouton démarrer, questionnaire à cocher, copie corrigée avec détail par question</td><td>étudiant</td></tr>
+  <tr><td>/reclamations</td><td>Création et suivi de statut par l'auteur, consultation admin, stats par statut</td><td>tous</td></tr>
+  <tr><td>/notifications</td><td>Publication par l'admin, consultation globale</td><td>tous en lecture, écriture admin</td></tr>
+</table>
+<h2>8.2 Opérations d'écriture</h2>
+<table>
+  <tr><th>Point d'entrée</th><th>Méthode</th><th>Actions</th><th>Habilitation effective</th></tr>
+  <tr><td>/api/auth/login</td><td>POST</td><td>ouverture de session</td><td>public, après passage de l'anti-robot si configuré</td></tr>
+  <tr><td>/api/auth/logout</td><td>POST</td><td>fermeture, et purge de la capture hors ligne côté navigateur</td><td>connecté</td></tr>
+  <tr><td>/api/auth/reset</td><td>POST</td><td>définition du mot de passe par jeton</td><td>public</td></tr>
+  <tr><td>/api/users</td><td>POST</td><td>create, update, renvoyer, toggle, delete</td><td>admin ; jamais sur le compte admin ni sur soi</td></tr>
+  <tr><td>/api/classes</td><td>POST</td><td>create, update, affecter, delete</td><td>admin</td></tr>
+  <tr><td>/api/emails</td><td>POST</td><td>send, delete</td><td>admin ; lien interne obligatoire</td></tr>
+  <tr><td>/api/salles</td><td>POST</td><td>create, update, delete</td><td>admin ; suppression refusée si la salle est utilisée</td></tr>
+  <tr><td>/api/matieres</td><td>POST</td><td>create, update, valider, delete</td><td>admin</td></tr>
+  <tr><td>/api/emplois</td><td>POST</td><td>save-week, copy-prev</td><td>admin, semaine non verrouillée</td></tr>
+  <tr><td>/api/emplois/pdf</td><td>GET</td><td>PDF de la semaine, en pièce jointe</td><td>connecté, étudiant forcé à sa classe</td></tr>
+  <tr><td>/api/presences</td><td>POST</td><td>save (appel), delete</td><td>prof pour ses matières, matière non validée</td></tr>
+  <tr><td>/api/notes</td><td>POST</td><td>create (CC/TP), update, cloturer (EXAM), delete</td><td>prof responsable ; gel après validation</td></tr>
+  <tr><td>/api/comptes-rendus</td><td>POST</td><td>create, delete, noter · depot, update_depot, delete_depot</td><td>prof pour create/noter/delete, étudiant pour depot ; multipart accepté</td></tr>
+  <tr><td>/api/comptes-rendus/extraction</td><td>POST</td><td>extraction de texte d'une pièce jointe, sans écriture</td><td>droit « creer » sur comptes rendus</td></tr>
+  <tr><td>/api/comptes-rendus/fichier</td><td>GET</td><td>téléchargement de la pièce jointe d'un dépôt</td><td>auteur, professeur responsable ou admin</td></tr>
+  <tr><td>/api/reclamations</td><td>POST</td><td>create, update (statut), delete</td><td>auteur uniquement</td></tr>
+  <tr><td>/api/notifications</td><td>POST</td><td>create, update, delete</td><td>admin</td></tr>
+  <tr><td>/api/cours</td><td>POST</td><td>create, update, terminer, rouvrir, delete</td><td>prof responsable de la matière</td></tr>
+  <tr><td>/api/cours/fichier</td><td>GET</td><td>téléchargement du support d'un chapitre</td><td>professeur du chapitre ou étudiant de la classe</td></tr>
+  <tr><td>/api/cours/quiz</td><td>POST / GET</td><td>demarrer, soumettre ; GET = métadonnées de la copie</td><td>étudiant ; le corrigé n'est jamais envoyé avant la soumission</td></tr>
+  <tr><td>/api/assistant</td><td>POST</td><td>question à l'assistant</td><td>les trois rôles, lecture seule, 403 si le module est refusé</td></tr>
+  <tr><td>/api/offline-data</td><td>GET</td><td>capture de l'emploi du temps de l'année</td><td>connecté ; 401 sans session, ce qui efface la capture</td></tr>
+</table>
+
+<div class="saut"></div>
+<h1>9. Sécurité et anti-robot</h1>
+<table>
+  <tr><th>Domaine</th><th>Mise en œuvre</th></tr>
+  <tr><td>Mots de passe</td><td>scrypt 32 octets avec sel de 16 octets par compte, stocké sous la forme <code>sel:hachage</code> ; vérification par comparaison à temps constant ; jamais de mot de passe en clair stocké ni affiché. Minimum 6 caractères à l'activation.</td></tr>
+  <tr><td>Session</td><td>Cookie <code>arp_session</code> = <code>id.signature</code>, signature HMAC-SHA256 tronquée à 16 hex, httpOnly, SameSite=Lax, chemin racine, 30 jours. La clé vient de <code>ARP_SECRET</code>. Le middleware vérifie la forme du cookie pour toutes les pages et API non publiques ; chaque route recontrôle la signature en relisant la session.</td></tr>
+  <tr><td>Invitations</td><td>Jeton de 24 octets aléatoires en hexadécimal, stocké, marqué consommé après usage. <em>Limite assumée : pas d'expiration temporelle.</em></td></tr>
+  <tr><td>Contrôle d'accès</td><td>Deux niveaux lisant la même table : <code>exiger()</code> côté écran, <code>peut()</code> + vérification de propriété côté écriture. Le masquage d'interface n'est jamais la garantie ; un 403 ou une redirection motivée répond toujours.</td></tr>
+  <tr><td>Injections</td><td>Aucune chaîne SQL : les filtres sont des objets passés au driver MongoDB. Les champs injectables (nom de fichier, contenu, consigne) sont traités comme des valeurs, jamais comme du code ou du nom de collection.</td></tr>
+  <tr><td>XSS</td><td>React échappe les interpolations ; les retours à la ligne sont rendus par la classe CSS <code>whitespace-pre-wrap</code> et non par injection HTML ; les liens de téléchargement passent par une route, jamais par une URL fabriquée depuis le nom du fichier.</td></tr>
+  <tr><td>Fichiers</td><td>Extension et signature vérifiées, taille plafonnée avant traitement, nom nettoyé pour l'en-tête <code>Content-Disposition</code>, binaire stocké en base et renvoyé au compte par une route qui applique la matrice des droits.</td></tr>
+  <tr><td>Secrets hors dépôt</td><td><code>.gitignore</code> exclut <code>node_modules/</code>, <code>.next/</code>, <code>data/</code>, <code>certs/</code> (cle privée TLS), <code>.assistant-secret</code>, <code>.tunnel-secret</code> et les fichiers <code>.env*</code> depuis le 7 novembre 2026. Aucune clé n'est écrite dans le code.</td></tr>
+  <tr><td>Confidentialité par compte</td><td>Le contexte envoyé au modèle IA est construit à partir de la session et ne contient que ce que ce compte a le droit de voir ; notes et pièces jointes d'un autre étudiant ne peuvent pas être obtenues par une requête fabriquée.</td></tr>
+</table>
+<h2>9.1 Anti-robot reCAPTCHA v2</h2>
+<p>Le module est un <strong>widget à case à cocher</strong> (« Je ne suis pas un robot »), type v2. La version du code suit le type de clé créé dans la console Google : les deux modes ne sont pas interchangeables, et servir le mauvais markup provoque une erreur visible. Une v3 par score a été essayée puis écartée : elle demandait un composant client pour appeler <code>grecaptcha.execute()</code>, ne produisait aucun jeton dans un onglet masqué, et sa décision était invisible. Le widget rendu accepte un contrôle montré tel quel en soutenance.</p>
+<ul>
+  <li><strong>Activation automatique.</strong> <code>recaptchaActif()</code> ne renvoie vrai que si <code>RECAPTCHA_SITE_KEY</code> et <code>RECAPTCHA_SECRET</code> sont tous les deux non vides. Sans les deux, la page de connexion redevient strictement classique : le code n'a pas besoin d'être modifié pour une démonstration sans réseau.</li>
+  <li><strong>Collecte du jeton.</strong> Le script <code>api.js</code>, chargé en <code>afterInteractive</code> et <strong>sans</strong> paramètre <code>render=</code>, remplace la div <code>g-recaptcha</code> placée dans le formulaire par le iframe du widget, et y crée lui-même le champ <code>g-recaptcha-response</code> au moment du clic. Aucun composant client n'est nécessaire : le formulaire reste un POST HTML ordinaire, rien n'est intercepté.</li>
+  <li><strong>Vérification serveur.</strong> La route de connexion appelle <code>siteverify</code> avec le secret, le jeton, l'adresse IP cliente (premier élément de <code>x-forwarded-for</code>, seule source exploitable derrière un proxy) et le <code>origin</code> public. Cet <code>origin</code> attache le jeton à la clé du site : un jeton volé sur un autre domaine est refusé. Seule la réponse <code>success</code> est exigée — la v2 ne renvoie ni score ni action.</li>
+  <li><strong>Refus fermé par défaut.</strong> Jeton absent, jeton expiré (ils le sont au bout de deux minutes), <code>origin</code> discordant ou <code>siteverify</code> injoignable : la connexion est refusée, et le test du mot de passe n'est même pas exécuté. Le motif est écrit dans la sortie du serveur et jamais affiché au visiteur, pour ne pas donner à un robot l'information qui lui permettrait d'ajuster sa méthode ; l'écran montre seulement « vérification anti-robot échouée, recochez la case ».</li>
+  <li><strong>Domaines.</strong> Google n'émet de jeton que pour les hôtes déclarés dans la console. Chaque adresse réellement utilisée — localhost, l'IP du poste, l'hôte du tunnel — doit y figurer, sinon le widget affiche une erreur et la vérification échoue sur ce domaine.</li>
+</ul>
+<h2>9.2 Limites de sécurité à connaître</h2>
+<ul>
+  <li>La clé HMAC a une valeur par défaut de démonstration si <code>ARP_SECRET</code> est absent : en exposition réelle, une session pourrait être fabriquée par un tiers connaissant le schéma.</li>
+  <li>Les comptes de démonstration partagent un mot de passe faible, volontairement rappelé sur l'écran de connexion.</li>
+  <li><code>certs/</code> contient une clé privée ; le dépôt public ne doit jamais la contenir.</li>
+  <li>Le dépôt en ligne est public : tant que le repli <code>ARP_SECRET</code> existe et que le mot de passe admin de départ n'a pas été changé, l'exposition de l'adresse réelle reste un risque.</li>
+  <li>Aucune expiration temporelle des jetons d'invitation, aucune limitation de tentative à la connexion en dehors de reCAPTCHA, pas de journal d'audit des accès.</li>
+</ul>
+<div class="saut"></div>
+<h1>10. Module Cours : documents, RAG et QCM noté /20</h1>
+<p>Ce module n'était pas demandé par le cahier des charges. Il répond à une question simple : un étudiant qui a son cours sur son téléphone doit pouvoir être interrogé dessus, et corrigé tout de suite, sans que le professeur ait à fabriquer un questionnaire à la main.</p>
+<h2>10.1 Du fichier au chapitre</h2>
+<p>Le professeur choisit une matière, un numéro de chapitre (1 à 30) et dépose un <strong>.docx</strong> ou un <strong>.pdf</strong> (8 Mo maximum). Le texte est extrait côté serveur par <code>lib/cours.ts</code>, sans aucune dépendance ajoutée :</p>
+<ul>
+  <li><strong>.docx</strong> : lecture manuelle de la table centrale du zip (recherche de la signature de fin jusqu'à 66 000 octets en arrière), puis du membre <code>word/document.xml</code>, dont les puces et les fins de paragraphe sont converties en sauts de ligne.</li>
+  <li><strong>.pdf</strong> : décompression des flux (Deflate, raw et inflate), lecture des tables <strong>ToUnicode</strong> de type <code>bfchar</code> et <code>bfrange</code> pour retrouver les vrais caractères, puis parcours des opérateurs de texte <code>Tj</code> et <code>TJ</code> dans les blocs <code>BT…ET</code> ; l'ordre des arguments est respecté pour ne pas inverser les fragments kernés.</li>
+  <li>Le fichier d'origine est conservé en binaire dans le document du chapitre et re-téléchargeable, avec les mêmes règles d'accès que les pièces jointes de comptes rendus.</li>
+</ul>
+<p>Un chapitre dont le texte utile dépasse <strong>300</strong> caractères non blancs peut être marqué « terminé », ce qui ouvre son quiz. En dessous, le quiz reste fermé : un cours réduit à un titre ne peut pas produire de questions pertinentes.</p>
+<h2>10.2 Indexation sémantique</h2>
+<p>À l'enregistrement, le texte est découpé en passages de <strong>800 caractères avec 120 de recouvrement</strong>, en ignorant les blocs de moins de 40 caractères ; le recouvrement évite qu'une réponse coupée en deux ne devienne introuvable. Chaque passage est envoyé aux plongements Gemini (<code>gemini-embedding-001</code>, 768 dimensions demandées sur les 3072 natives, par lots de 16, texte réduit à 8 000 caractères) puis stocké dans <code>cours_passages</code> après normalisation L2.</p>
+<p>La recherche est faite par <strong>similarité cosinus calculée en JavaScript</strong> : le serveur MongoDB local ne fournit pas <code>$vectorSearch</code>, et les chapitres de démonstration produisent quelques dizaines de passages, ce qui rend le calcul complet immédiat. Les <strong>4 meilleurs passages</strong> sont retenus. Deux replis existent :</p>
+<ul>
+  <li>si un seul passage n'a pas de vecteur (clé IA absente, appel raté), la recherche retombe sur un recouvrement de mots ;</li>
+  <li>l'écran du chapitre affiche explicitement le mode utilisé — « recherche sémantique (index Gemini) » ou mots-clés — pour qu'on ne prenne pas le repli pour du sémantique.</li>
+</ul>
+<h2>10.3 QCM à la volée, une seule tentative</h2>
+<p>Quand le chapitre est terminé, l'étudiant de la classe voit « Passer le quiz » : <strong>6 questions</strong> pour un chapitre, <strong>8 questions</strong> pour le QCM global d'une matière, ce dernier n'étant proposé que lorsque tous les chapitres sont terminés.</p>
+<table>
+  <tr><th>Point</th><th>Mécanisme réel</th></tr>
+  <tr><td>Fabrication</td><td>Gemini rédige les questions à partir des seuls passages fournis ; le résultat n'est accepté que s'il contient au moins <code>min(3, nb)</code> questions valides. Sinon, un moteur local prend le relais : la bonne réponse est une phrase réellement extraite du chapitre (40 à 220 caractères), les distracteurs sont des phrases d'autres passages du même cours</td></tr>
+  <tr><td>Personnalisation</td><td>Un tirage aléatoire est mélangé avec une graine dérivée de l'identifiant de l'étudiant : deux élèves du même chapitre n'obtiennent pas le même ordre de questions</td></tr>
+  <tr><td>Une seule tentative</td><td>Index unique <code>(etudiant_id, cle)</code> avec <code>cle</code> = <code>chapitre:&lt;id&gt;</code> ou <code>global:&lt;matiere_id&gt;</code> ; le document est créé non soumis, la soumission est un <code>updateOne</code> filtré sur <code>soumis: 0</code>, donc une double soumission ne double pas la note</td></tr>
+  <tr><td>Corrigé</td><td>Il n'est jamais envoyé au navigateur avant la soumission : la route GET ne renvoie que les métadonnées de la copie</td></tr>
+  <tr><td>Note</td><td><code>arrondi(justes / total × 80) / 4</code>, donc une note sur 20 au pas de 0,25, calculée côté serveur. Elle est stockée dans <code>quiz_passations</code> et <strong>ne rejoint pas la collection <code>notes</code></strong> : elle ne modifie ni la moyenne de matière ni la moyenne générale</td></tr>
+  <tr><td>Restitution</td><td>Score, nombre de bonnes réponses, badge « chapitre maîtrisé » à partir de 12/20, puis revue question par question avec la réponse donnée, la bonne et la mention « Sans réponse. »</td></tr>
+  <tr><td>Tableaux de bord</td><td>Le professeur voit copies, moyenne et taux de réussite par chapitre et pour le QCM global ; l'étudiant ne voit que sa copie</td></tr>
+  <tr><td>Protection</td><td>Un chapitre n'est plus supprimable ni réouvrable si des élèves ont déjà composé avec</td></tr>
+</table>
+
+<div class="saut"></div>
+<h1>11. Assistant : Gemini avec repli local</h1>
+<p>Bulle flottante en bas à droite, présente pour les trois rôles dès que la matrice autorise le module, absente sur la page hors ligne. L'assistant est <strong>en lecture seule par construction</strong> : sa route d'API ne fait qu'appeler des fonctions de consultation, il n'existe aucun chemin d'écriture dans ce module.</p>
+<h2>11.1 Trois niveaux de réponse</h2>
+<ol>
+  <li><strong>Refus connus d'abord</strong>, avant même de consulter le modèle : cinq familles détectées sur des mots-clés normalisés — altérer l'application, demander des identifiants ou mots de passe, modifier ses propres notes ou absences (étudiant), se modifier soi-même ou sa classe affectée (professeur), et toucher les données d'un autre étudiant ou d'une autre classe.</li>
+  <li><strong>Gemini ensuite</strong>, si une clé existe et si le quota du jour n'est pas épuisé.</li>
+  <li><strong>Moteur local enfin</strong> : règles par thème (prochaine séance, notes, présences, comptes rendus, matières, réclamations, notifications, salles, aide) qui lisent la base directement. Ce niveau suffit à lui seul pour la démonstration.</li>
+</ol>
+<h2>11.2 Étanchéité et coût</h2>
+<p>La vraie barrière n'est pas la consigne : <strong>le modèle ne voit que ce qui lui est envoyé</strong>. Le contexte est un snapshot de 4 200 caractères maximum, construit à partir de la session appelante et jamais d'un identifiant passé en paramètre : identité du compte, emploi du temps de la semaine (60 lignes), matières accessibles (30), statistiques du rôle, comptes rendus (20), réclamations (12, l'admin voit tout, les autres leurs propres messages), cinq dernières notifications. Les mots de passe et les adresses électroniques n'y entrent pas. L'historique est tronqué aux 6 derniers messages et la question à 300 caractères.</p>
+<table>
+  <tr><th>Réglage</th><th>Valeur</th><th>Pourquoi</th></tr>
+  <tr><td>Quota</td><td>40 questions IA par compte et par jour (<code>ASSISTANT_QUOTA</code>), comptées dans <code>assistant_usage</code></td><td>Le compteur n'est incrémenté qu'en cas de réponse IA réellement produite ; le repli local est gratuit</td></tr>
+  <tr><td>Modèles essayés par ordre</td><td><code>gemini-3.5-flash</code>, puis <code>gemini-3.1-flash-lite</code>, puis <code>gemini-2.5-flash</code> ; un modèle absent de la liste peut être imposé en ligne 2 du fichier de clé</td><td>Erreur 400, 404, 429 ou 5xx et timeout font passer au modèle suivant ; deux identifiants longtemps utilisés renvoient désormais « no longer available to new users » et faisaient retomber silencieusement en local</td></tr>
+  <tr><td>Délai</td><td>45 secondes, en budget global et par appel</td><td>Un élève ne doit jamais attendre plus ; au-delà, la réponse locale part</td></tr>
+  <tr><td>Sortie</td><td>température 0,5, 1 600 tokens de sortie, <code>thinking_budget: 0</code></td><td>Sans budget de réflexion nul, les tokens de « raisonnement » remplissaient la sortie et coupaient la réponse avant sa fin</td></tr>
+  <tr><td>Recharge de la clé</td><td>lue une seule fois au chargement du module</td><td>Changer la clé ou le modèle exige un redémarrage du serveur</td></tr>
+</table>
+<h2>11.3 Deux régimes de réponse et les suggestions</h2>
+<p>Le prompt distingue deux situations, ce qui évite de transformer l'assistant en base de questions fermées :</p>
+<ul>
+  <li><strong>Régime A — scolarité du compte</strong> : ancrage strict sur le snapshot, rien en dehors.</li>
+  <li><strong>Régime B — travail académique libre</strong> : plan de compte rendu, fiche de révision, explication d'une notion, reformulation, QCM. Le modèle peut mobiliser ses propres connaissances, en s'appuyant sur les matières et coefficients réels, et doit livrer une <em>trame</em> plutôt qu'un devoir rédigé clé en main.</li>
+</ul>
+<p>La consigne de fin demande une ligne <code>PROPOSITIONS: q1 | q2 | q3</code>. Elle est retirée du texte affiché et décodée en trois puces cliquables sous la bulle concernée, ce qui relance la conversation sans zone de saisie. Les questions préparées par rôle restent disponibles sous la zone de saisie. Le pied de chaque réponse indique la source réelle — modèle Gemini avec le quota restant, ou règles internes — pour qu'un élève ne confonde pas les deux, et rappelle que les réponses sont produites à partir de ses seules données accessibles.</p>
+<div class="saut"></div>
+<h1>12. PWA : installation et mode hors ligne</h1>
+<h2>12.1 Comment l'installation est rendue possible</h2>
+<p>Les trois conditions du navigateur sont remplies : manifest valide avec icône et affichage standalone, service worker actif avec gestionnaire de requêtes, contexte sécurisé. Sur PC, l'origine <code>localhost</code> est réputée sécurisée, ce qui permet d'installer sans certificat. Sur Android, <code>localhost</code> n'existe pas pour le téléphone et une adresse locale en HTTP n'est pas un contexte sécurisé : le HTTP y rend l'installation et le hors ligne impossibles. C'est la raison du serveur HTTPS local.</p>
+<div class="note">Point vérifié et contre-intuitif : <strong>Chrome/Android n'accepte pas une autorité de certification installée par l'utilisateur</strong> pour un site servi en HTTPS local. Sur certains téléphones, l'installation exige donc un tunnel public (Cloudflare Quick Tunnel, URL <code>trycloudflare.com</code>) plutôt que l'IP du poste. Le certificat local reste néanmoins nécessaire pour l'usage depuis d'autres PC du réseau et pour éviter tout avertissement sur le poste lui-même.</div>
+<h2>12.2 Stratégie de cache du service worker</h2>
+<p>Un seul cache, versionné <code>arp-v6</code> : une nouvelle publication évince automatiquement les entrées anciennes, ce qui règle le problème du déploiement d'un service worker modifié.</p>
+<table>
+  <tr><th>Type de requête</th><th>Stratégie</th><th>Comportement constaté</th></tr>
+  <tr><td>Fichiers essentiels (manifest, icône, <code>/login</code>)</td><td>Pré-cachés à l'installation</td><td>Toujours disponibles</td></tr>
+  <tr><td>Navigation HTML</td><td>Réseau d'abord, puis cache de la page <code>/offline</code>, puis <code>/login</code></td><td>Page déjà vue servie hors ligne ; sinon message hors ligne avec le calendrier</td></tr>
+  <tr><td>Ressources statiques</td><td>Cache d'abord, puis réseau</td><td>Chargement instantané, pas de consommation de données</td></tr>
+  <tr><td><code>/api/offline-data</code></td><td>Réseau d'abord, puis capture cachée ; 504 JSON si aucune capture</td><td>Le sélecteur de semaine fonctionne hors ligne</td></tr>
+  <tr><td>Tout autre <code>/api/…</code></td><td>Réseau uniquement, jamais mis en cache</td><td>Une écriture n'est jamais simulée hors ligne</td></tr>
+</table>
+<h2>12.3 Capture automatique, sans bouton</h2>
+<p>Le principe : ne rien demander à l'utilisateur. <code>lib/hors-ligne.ts</code> construit <strong>toutes les semaines de l'année scolaire</strong> (du lundi qui suit le 1ᵉʳ août au 31 juillet suivant), groupées semaine par semaine puis classe par classe, réduites au périmètre du rôle — toutes les classes pour l'admin, ses séances pour le professeur, sa classe pour l'étudiant — et la semaine courante est toujours présente.</p>
+<ul>
+  <li><code>/api/offline-data</code> est en <code>force-dynamic</code> et <code>no-store</code> ; il répond 401 sans session.</li>
+  <li>La capture est déclenchée à l'installation, à l'activation, et en <code>event.waitUntil()</code> sur <strong>toute navigation en 2xx</strong>, avec un throttle de 30 secondes : ouvrir un écran connecté suffit à sauvegarder.</li>
+  <li>Un 401 sur <code>/api/offline-data</code> <strong>efface la capture</strong> : se déconnecter retire les données de l'appareil.</li>
+  <li>Le cache contient deux entrées : la page <code>/offline</code> et le JSON <code>/api/offline-data</code>.</li>
+</ul>
+<h2>12.4 Ce qui marche hors ligne, ce qui ne marche pas</h2>
+<p><strong>Marche :</strong> toute l'emploi du temps de l'année pour le périmètre du compte, affiché en grille 5 jours × 2 créneaux, avec changement de semaine depuis le cache, et l'impression navigateur. <strong>Ne marche pas :</strong> les écritures (appel, dépôt, note, création) et les pages de consultation autres que l'emploi du temps. Le service worker ne met volontairement rien en file d'attente à rejouer : un pointage non confirmé silencieusement serait trompeur pour l'enseignant.</p>
+<h2>12.5 Accès depuis un téléphone</h2>
+<ol>
+  <li><code>npm run build</code> puis <code>npm start</code> : le serveur écoute sur le port 443 et affiche l'adresse à utiliser.</li>
+  <li>Installer <code>certs/arp-root-ca.pem</code> comme autorité de certification sur le téléphone — ou, si Chrome refuse, ouvrir l'URL d'un tunnel public.</li>
+  <li>Ouvrir l'adresse affichée (aucun numéro de port), puis menu Chrome → « Installer l'application ».</li>
+  <li>Consulter une fois l'emploi du temps : la capture hors ligne se fait seule.</li>
+</ol>
+<p>Le certificat est produit par mkcert (autorité locale créée sur le poste). Il n'y a plus rien à régénérer à la main : <code>scripts/ensure-cert.js</code> relit les adresses IPv4 privées du poste, resigne si elles changent, et applique le nouveau contexte au serveur en cours d'écoute (contrôle toutes les 30 secondes). L'autorité racine ne change pas, donc le téléphone n'a pas besoin de la réinstaller après un changement d'IP ; en revanche l'origine ayant changé, le raccourci PWA doit être recréé.</p>
+
+<div class="saut"></div>
+<h1>13. Installation, démarrage, démonstration</h1>
+<h2>13.1 Prérequis et commandes</h2>
+<table>
+  <tr><th>Besoin</th><th>Commande</th><th>Résultat</th></tr>
+  <tr><td>Installation</td><td><code>npm install</code></td><td>dépendances du projet</td></tr>
+  <tr><td>Développement (rechargement à chaud)</td><td><code>npm run dev</code></td><td><code>http://localhost:3000</code> — non utilisable depuis le téléphone</td></tr>
+  <tr><td>Base de données</td><td><code>npm run db:start</code>, ou rien du tout</td><td>le serveur HTTPS démarre mongod lui-même si le port 27017 ne répond pas</td></tr>
+  <tr><td>Production locale et téléphone</td><td><code>npm run build</code> puis <code>npm start</code></td><td><code>https://localhost</code> et <code>https://&lt;IPv4 du poste&gt;</code>, sans numéro de port</td></tr>
+  <tr><td>Inspection des collections</td><td><code>npm run db:tables</code></td><td>vidage des collections en tableaux, mot de passe masqué</td></tr>
+  <tr><td>Migration depuis l'ancienne base SQLite</td><td><code>npm run db:migrate</code></td><td>refusé si la base n'est pas vide, sauf <code>--force</code> ; conserve les identifiants numériques</td></tr>
+  <tr><td>Import des chapitres de démonstration</td><td><code>npm run cours:gen</code> puis <code>npm run db:cours</code></td><td>25 chapitres .docx puis import réel par l'API, avec extraction, droits et indexation</td></tr>
+  <tr><td>Réinitialiser les données</td><td>purger les collections, ou repartir d'une base vide</td><td>le jeu de démonstration est recréé au premier appel. <strong>Ne pas utiliser <code>npm run db:migrate --force</code> pour un simple nettoyage : cela remettrait le mot de passe admin à 123456</strong></td></tr>
+</table>
+<h2>13.2 Variables d'environnement</h2>
+<table>
+  <tr><th>Variable</th><th>Défaut si absente</th><th>Effet</th></tr>
+  <tr><td><code>MONGO_URL</code> / <code>MONGO_DB</code></td><td><code>mongodb://127.0.0.1:27017</code> / <code>arp_education</code></td><td>Base utilisée ; une URL distante désactive le démarrage automatique de mongod</td></tr>
+  <tr><td><code>ARP_SECRET</code></td><td>repli de démonstration, ou le fichier <code>.tunnel-secret</code></td><td>Clé de signature des cookies de session ; à fixer absolument hors développement</td></tr>
+  <tr><td><code>RECAPTCHA_SITE_KEY</code> / <code>RECAPTCHA_SECRET</code></td><td>vides</td><td>Les deux sont nécessaires pour activer l'anti-robot ; sinon la connexion reste classique</td></tr>
+  <tr><td><code>GEMINI_API_KEY</code> (ou <code>.assistant-secret</code>)</td><td>absente</td><td>Active l'assistant IA, les plongements RAG et la fabrication de QCM par modèle ; sinon repli local intégral</td></tr>
+  <tr><td><code>GEMINI_EMBEDDING</code> / <code>GEMINI_DIMENSIONS</code></td><td><code>gemini-embedding-001</code> / <code>768</code></td><td>Modèle et dimension d'indexation ; changer de dimension oblige à ré-indexer</td></tr>
+  <tr><td><code>ASSISTANT_QUOTA</code></td><td><code>40</code></td><td>Questions IA par compte et par jour</td></tr>
+  <tr><td><code>HTTPS_PORT</code> / <code>HTTPS_DEV</code> / <code>WIFI_IP</code></td><td><code>443</code> / off / détection</td><td>Port d'écoute, mode développement du serveur, adresse forcée pour le certificat</td></tr>
+  <tr><td><code>MONGOD_EXE</code> / <code>MONGOD_CFG</code></td><td>recherche dans <code>Tools\mongodb</code></td><td>Emplacement du binaire et configuration utilisés par le lanceur automatique</td></tr>
+</table>
+<h2>13.3 Comptes de démonstration</h2>
+<table>
+  <tr><th>Rôle</th><th>Adresse électronique</th><th>Remarque</th></tr>
+  <tr><td>Administrateur</td><td><code>admin@arp.edu</code></td><td>Compte fixe, seul non créé par l'application</td></tr>
+  <tr><td>Professeur</td><td><code>sami.benali@arp.edu</code></td><td>Responsable de DEVWEB et BDD (INFO-2A)</td></tr>
+  <tr><td>Professeur</td><td><code>nadia.trabelsi@arp.edu</code></td><td>Responsable de COMPTA (GEST-2A)</td></tr>
+  <tr><td>Étudiant</td><td><code>ahmed.j@arp.edu</code></td><td>Classe INFO-2A</td></tr>
+</table>
+<div class="note"><strong>Avertissement pour la démonstration.</strong> L'encart de la page de connexion annonce le mot de passe <code>123456</code> pour ces quatre comptes. Ce n'est vrai que sur une base tout juste seedée. En l'état, sur la base de travail, le compte admin ne répond plus à ce mot de passe : vérifier avant de montrer l'écran, ou réactiver un compte de démonstration explicite. Afficher un mot de passe qui ne marche pas pendant une soutenance est le genre de détail qui coûte cher.</div>
+<h2>13.4 Scénario de démonstration conseillé (12 minutes)</h2>
+<ol>
+  <li>Admin : créer un étudiant par son courriel, montrer que son compte apparaît « à définir ».</li>
+  <li>Admin : ouvrir Emails, cliquer le lien d'activation, définir le mot de passe.</li>
+  <li>Étudiant : se connecter, consulter l'emploi du temps de la semaine, le télécharger en PDF.</li>
+  <li>Prof : faire l'appel sur une séance, ajouter deux notes CC/TP, créer un compte rendu avec date limite.</li>
+  <li>Étudiant : déposer son compte rendu <strong>avec une pièce jointe</strong>, montrer le texte repris automatiquement dans la zone de rédaction et le lien 📎.</li>
+  <li>Prof : télécharger la pièce jointe de l'étudiant, la noter.</li>
+  <li>Prof : importer un chapitre .docx dans Cours, montrer l'extraction et l'indexation ; marquer le chapitre terminé.</li>
+  <li>Étudiant : passer le QCM du chapitre, obtenir sa note /20 immédiate et la revue question par question ; montrer qu'une seconde tentative est impossible.</li>
+  <li>Étudiant : poser une question libre à l'assistant, montrer les suggestions cliquables et la source affichée ; poser une question interdite et montrer le refus.</li>
+  <li>Prof : clôturer la matière ; Admin : la valider, montrer que la moyenne publiée apparaît à l'étudiant et que les écritures sont gelées.</li>
+  <li>Étudiant : créer une réclamation et en changer seul le statut.</li>
+  <li>Coupure de réseau : arrêter le serveur, montrer que l'emploi du temps de n'importe quelle semaine de l'année s'affiche toujours depuis le téléphone.</li>
+</ol>
+
+<div class="saut"></div>
+<h1>14. Préparer un déploiement hébergé</h1>
+<p>Rien n'est déployé à ce jour : cette section liste les prérequis, sans modifications faites dans le code. La cible étudiée est Vercel (Projet) avec MongoDB Atlas en base hébergée.</p>
+<table>
+  <tr><th>Point</th><th>Contrainte réelle</th><th>Action obligatoire avant mise en ligne</th></tr>
+  <tr><td>Base de données</td><td>Le code se connecte à <code>127.0.0.1:27017</code> et ne connaît pas l'URI Atlas</td><td>Créer un cluster, définir <code>MONGO_URL</code> et <code>MONGO_DB</code>, autoriser l'IP 0.0.0.0/0 ou la plage des adresses des fonctions, ré-exécuter la migration</td></tr>
+  <tr><td>Secret de session</td><td>Repli de démonstration en dur</td><td>Définir <code>ARP_SECRET</code> aléatoire ; sinon toute session est fabriquable</td></tr>
+  <tr><td>Comptes</td><td>Mot de passe admin de départ connu, jeu de démonstration public</td><td>Changer le mot de passe admin, purger les comptes et notes de démonstration</td></tr>
+  <tr><td>Base locale auto-démarrée</td><td><code>server-https.js</code> et <code>scripts/ensure-mongo.js</code> lancent <code>mongod.exe</code> : impossible hors du poste</td><td>Ne pas déployer le serveur custom ; repartir sur <code>next start</code> ou les fonctions du serveur</td></tr>
+  <tr><td>Certificats / mkcert / tunnel</td><td>Tout le <code>scripts/</code> TLS est propre au réseau local</td><td>À écarter du déploiement ; Vercel fournit le HTTPS</td></tr>
+  <tr><td>Système de fichiers</td><td>Aucune écriture disque dans <code>app/</code> et <code>lib/</code> : tout est en base, pièces jointes comprises</td><td>Rien — c'est le point qui rend le déploiement possible</td></tr>
+  <tr><td>Taille des fichiers</td><td>Limite de corps de requête de l'offre gratuite ≈ 4,5 Mo, alors que l'application accepte 8 Mo</td><td>Baisser la constante de taille, ou passer par un stockage d'objets</td></tr>
+  <tr><td>Durée des appels IA</td><td><code>DELAI_MS = 45 000</code> dans <code>lib/gemini.ts</code> contre 10 secondes maximum en offre gratuite</td><td>Soit l'offre payante, soit réduire le délai à environ 8 secondes, soit rendre les appels IA asynchrones</td></tr>
+  <tr><td>reCAPTCHA</td><td>La console Google ne liste que <code>localhost</code> ; avec un widget v2, un domaine non déclaré affiche son erreur directement dans la case à cocher</td><td>Ajouter chaque hôte réellement servi — l'IP du poste, l'hôte du tunnel, le domaine publié — avant de parler de l'anti-robot en démonstration</td></tr>
+  <tr><td>Clé Gemini</td><td><code>.assistant-secret</code> n'est pas dans le dépôt</td><td>Recréer la clé comme secret d'environnement ; ne jamais la commiter</td></tr>
+  <tr><td>Dépôt public</td><td>Le dépôt en ligne est public et contient les identifiants de démonstration</td><td>Le passer privé, ou nettoyer l'historique avant exposition</td></tr>
+  <tr><td>Dépendance native</td><td><code>better-sqlite3</code> exige une compilation native</td><td>Retirer ce paquet, qui ne sert plus qu'au script de migration, et documenter la migration comme archivée</td></tr>
+</table>
+<div class="saut"></div>
+<h1>15. Tests réalisés et résultats</h1>
+<p>Chaque ligne correspond à une exécution réelle sur la version produite, en HTTPS local sur l'adresse du poste, ou par requêtes authentifiées en curl avec un cookie de session fabriqué localement. Aucun test automatisé n'existe : la qualité est établie par ces vérifications manuelles, reproductibles avec les mêmes commandes.</p>
+<h2>15.1 Socle</h2>
+<table>
+  <tr><th>Vérification</th><th>Méthode</th><th>Résultat</th></tr>
+  <tr><td>Typage et compilation</td><td><code>npx tsc --noEmit</code> puis <code>npm run build</code></td><td>Sans erreur ; toutes les routes et pages générées</td></tr>
+  <tr><td>Redirections après écriture</td><td>Codes 303 sur les points d'écriture, enchaînement d'un POST puis d'un rechargement</td><td>Conforme — aucun rejouage de POST, aucune erreur 500</td></tr>
+  <tr><td>Retour au même filtre</td><td>POST depuis une liste filtrée, lecture de l'en-tête Location</td><td>Conforme — <code>?retour=</code> conserve onglet, classe, période et page</td></tr>
+  <tr><td>Redirections depuis le téléphone</td><td>Comparaison de l'en-tête Location entre appel par IP et appel par localhost</td><td>Conforme après introduction de <code>clientOrigin</code></td></tr>
+  <tr><td>Garde sans session</td><td>Requête anonyme sur <code>/notes</code> et sur <code>/api/notes</code></td><td>Page : redirection vers la connexion. API : 401 JSON</td></tr>
+  <tr><td>Accès directs aux pages réservées</td><td>Sessions professeur et étudiant sur <code>/users</code></td><td>Redirection vers le tableau de bord avec motif</td></tr>
+  <tr><td>Refus d'écriture hors rôle</td><td>Étudiant créant une notification, une salle ou un compte ; professeur écrivant dans une matière d'un autre</td><td>403 sur les cas testés</td></tr>
+  <tr><td>Confidentialité avant validation</td><td>Consultation étudiant sur une matière « terminée »</td><td>Conforme — zone « en attente de publication »</td></tr>
+  <tr><td>Gel après validation</td><td>Suppression d'une note et dépôt d'un compte rendu sur matière <code>valide</code></td><td>Refusés</td></tr>
+  <tr><td>Verrou de semaine</td><td>Écriture sur une semaine à partir du samedi</td><td>Refusée côté serveur ; fenêtre d'édition absente</td></tr>
+  <tr><td>Clôture puis validation</td><td>Saisie de trois notes d'examen, publication, calcul de la moyenne pondérée</td><td>Conforme</td></tr>
+  <tr><td>PDF de l'emploi du temps</td><td>GET authentifié, contrôle de <code>Content-Disposition</code>, ouverture du fichier</td><td>Conforme — A4 paysage, accents corrects, grille complète</td></tr>
+  <tr><td>PDF falsifié pour une autre classe</td><td>Paramètre <code>classe_id</code> modifié par un étudiant</td><td>Conforme — le fichier renvoyé est celui de sa propre classe</td></tr>
+  <tr><td>Contexte sécurisé et confiance TLS</td><td><code>curl --cacert certs/arp-root-ca.pem https://&lt;IPv4&gt;/login</code></td><td>200 sans avertissement ; code 60 lorsque le certificat ne couvre plus l'IP courante</td></tr>
+</table>
+<h2>15.2 Cours, RAG et QCM</h2>
+<table>
+  <tr><th>Vérification</th><th>Méthode</th><th>Résultat</th></tr>
+  <tr><td>Import de 25 chapitres de démonstration</td><td><code>npm run cours:gen</code> puis <code>npm run db:cours</code>, c'est-à-dire l'API réelle avec session, droits et extraction</td><td>Conforme — les 25 chapitres créés, textes extraits, indexés</td></tr>
+  <tr><td>Extraction .docx</td><td>Fichiers générés par python-docx, lecture par le parseur maison</td><td>Conforme</td></tr>
+  <tr><td>Extraction .pdf</td><td>Décompression des flux puis décodage par les tables ToUnicode</td><td>Conforme sur les PDF produits ; le repli de police sans CMap donne du texte partiel, d'où le seuil de 300 caractères</td></tr>
+  <tr><td>Indexation sémantique</td><td>Nombre de passages avec vecteur non vide après import</td><td>Conforme — passages indexés en 768 dimensions, normalisés</td></tr>
+  <tr><td>Recherche cosinus</td><td>Question posée sur un chapitre précis, lecture des passages retenus</td><td>Conforme — les 4 passages retenus proviennent du bon chapitre</td></tr>
+  <tr><td>Repli sans vecteur</td><td>Requête lorsqu'un passage n'a pas de vecteur</td><td>Conforme — bascule sur le recouvrement de mots, affichée à l'écran</td></tr>
+  <tr><td>Une seule tentative</td><td>Deux démarrer sur la même clé, puis double soumission</td><td>Refusé par l'index unique ; la note ne change pas</td></tr>
+  <tr><td>Corrigé non exposé</td><td>Lecture de la réponse de la route GET avant soumission, dans le code source de la page</td><td>Conforme — aucune bonne réponse dans le HTML envoyé</td></tr>
+  <tr><td>Note séparée</td><td>Passation d'un QCM puis lecture de la moyenne de matière</td><td>Conforme — le quiz n'altère aucune moyenne</td></tr>
+  <tr><td>Protection du chapitre</td><td>Suppression et réouverture après passations</td><td>Refusées</td></tr>
+</table>
+<h2>15.3 Assistant</h2>
+<table>
+  <tr><th>Vérification</th><th>Méthode</th><th>Résultat</th></tr>
+  <tr><td>Chemin IA réel</td><td>Questions libres des trois rôles, lecture du champ <code>source</code></td><td>Conforme — <code>source:"ia"</code>, réponses de 950 à 1 250 caractères, trois suggestions, quota décrémenté</td></tr>
+  <tr><td>Refus des cinq familles</td><td>Questions types : modifier mes notes, donner un mot de passe, données d'un autre élève</td><td>Conforme — refus avant tout appel réseau au modèle</td></tr>
+  <tr><td>Étanchéité</td><td>Question d'un étudiant sur un autre étudiant</td><td>Refus ; et le snapshot ne contient de toute façon pas la donnée</td></tr>
+  <tr><td>Repli sans clé</td><td>Variable de clé rendue vide, puis questions</td><td>Conforme — réponses locales, <code>assistant_usage</code> non incrémenté</td></tr>
+  <tr><td>Repli sur clé invalide</td><td>Fausse clé temporaire en place du modèle réel</td><td>Conforme — erreur 400, modèle suivant, puis repli local ; clé supprimée après le test</td></tr>
+  <tr><td>Quota</td><td>Appels au-delà de la limite journalière</td><td>Conforme — bascule en local pour le reste de la journée</td></tr>
+  <tr><td>Droits sur la route</td><td>Appel d'API avec un rôle auquel <code>peut()</code> refuse le module</td><td>403 — la matrice reste la seule source de droits même sans page dédiée</td></tr>
+</table>
+<h2>15.4 Comptes rendus avec pièce jointe</h2>
+<table>
+  <tr><th>Vérification</th><th>Méthode</th><th>Résultat</th></tr>
+  <tr><td>Dépôt avec .docx</td><td>POST multipart réel, puis relecture du dépôt</td><td>Conforme — binaire stocké, nom, type et taille conservés, texte pré-rempli</td></tr>
+  <tr><td>Extraction avant stockage</td><td>Route d'extraction isolée, sans écriture en base</td><td>Conforme — le texte s'affiche avant validation, rien n'est écrit</td></tr>
+  <tr><td>Fichier de 7 Mo</td><td>Chronométrage de l'extraction</td><td>0,76 s — pas de risque d'occupation du processeur</td></tr>
+  <tr><td>Fichier trop lourd</td><td>Envoi au-delà de 8 Mo</td><td>Refusé par un message explicite <em>avant</em> tout traitement du contenu</td></tr>
+  <tr><td>Format non pris en charge</td><td>.txt puis fichier aux deux en-têtes absentés</td><td>Refusés (415) ; l'extension déclarée ne suffit pas</td></tr>
+  <tr><td>Pièce jointe scannée</td><td>PDF sans couche texte</td><td>Acceptée et téléchargeable ; le texte reste à saisir à la main</td></tr>
+  <tr><td>Remplacement</td><td>Modification de dépôt sans nouveau fichier</td><td>Conforme — l'ancienne pièce jointe est conservée</td></tr>
+  <tr><td>Contrôle d'accès au fichier</td><td>Téléchargement par son auteur, par le professeur responsable, par un autre étudiant, par un autre professeur</td><td>Les deux premiers autorisé, les deux autres refusés</td></tr>
+  <tr><td>Nom de fichier malveillant</td><td>Nom contenant guillemets et retours chariot</td><td>Nettoyé avant l'en-tête de téléchargement</td></tr>
+  <tr><td>Gel de la note</td><td>Modification de dépôt après attribution de note</td><td>Refusée, comme prévu par la règle métier</td></tr>
+</table>
+<h2>15.5 Anti-robot</h2>
+<table>
+  <tr><th>Vérification</th><th>Méthode</th><th>Résultat</th></tr>
+  <tr><td>Module désactivé sans les deux clés</td><td>Variables laissées vides, lecture de la page de connexion</td><td>Conforme — aucun script Google chargé, formulaire strictement classique</td></tr>
+  <tr><td>Branchement côté serveur</td><td>Appel direct de la fonction de vérification avec un jeton vide</td><td>Conforme — refus motivé, motif écrit dans la sortie du serveur et non dans la page</td></tr>
+  <tr><td>Markup v2 servi</td><td>Lecture de la page produite après build, avec les clés chargées</td><td>Conforme — script <code>api.js</code> chargé <strong>sans</strong> <code>?render=</code>, un seul conteneur <code>div.g-recaptcha</code> porteur du <code>data-sitekey</code> du fichier <code>.env.local</code>, aucun champ <code>g-recaptcha-response</code> dans le HTML serveur (il est créé par Google au clic)</td></tr>
+  <tr><td>Widget réellement peint dans le navigateur</td><td>Arbre accessible de la page <code>/login</code> après chargement</td><td>Conforme — l'iframe <code>reCAPTCHA</code> apparaît dans le formulaire, avant le champ email, sans erreur dans la console</td></tr>
+  <tr><td>POST sans jeton, en conditions réelles</td><td>Requête envoyée au port 443 sans aucune valeur <code>g-recaptcha-response</code></td><td>Conforme — 303 vers <code>/login?captcha=1</code>, et le motif « aucun jeton » écrit dans la sortie du serveur ; le mot de passe n'est pas même testé</td></tr>
+  <tr><td>Jetons périmés ou fabriqués</td><td>Le jeton v2 est à usage unique et expire au bout de deux minutes ; le contrôle d'<code>origin</code> l'attache à la clé du site</td><td>Conforme en lecture — un jeton d'un autre domaine est refusé par <code>siteverify</code>. Non testé avec un vrai jeton volé, faute de second site</td></tr>
+  <tr><td>Clic sur la case puis connexion</td><td>Test dans le navigateur intégré</td><td><strong>Non concluant par nature :</strong> l'onglet piloté est masqué, et reCAPTCHA ne laisse pas cocher sa case sur une page non visible. La validation finale doit être faite dans une vraie fenêtre Chrome, sur un domaine déclaré dans la console Google</td></tr>
+</table>
+<h2>15.6 Défauts rencontrés pendant le développement et leur correction</h2>
+<table>
+  <tr><th>Défaut</th><th>Origine</th><th>Correction</th></tr>
+  <tr><td>Erreur 500 après chaque connexion et chaque formulaire</td><td>Redirection 307 rejouant le POST sur une page serveur</td><td>Redirection 303 systématique, centralisée dans <code>routeurRetour()</code></td></tr>
+  <tr><td>Bouton d'impression cassant l'écran</td><td>Gestionnaire d'événement passé dans un composant serveur</td><td>Bouton isolé dans un composant client</td></tr>
+  <tr><td>« Télécharger en PDF » ouvrait la fenêtre d'impression</td><td>Aucune bibliothèque de génération de PDF prévue</td><td>Vrai fichier PDF produit par le serveur, sans dépendance ajoutée</td></tr>
+  <tr><td>Le téléphone renvoyé sur une adresse injoignable</td><td>Origine issue de Next et non de la demande réelle</td><td><code>lib/origin.ts</code> utilisé par toutes les redirections</td></tr>
+  <tr><td>Route ajoutée introuvable ou suspendue après un build</td><td>Le serveur Node sert la sortie de build figée au dernier <code>npm run build</code></td><td>Rebuild obligatoire avec toute modification de route ; procédure écrite dans la documentation</td></tr>
+  <tr><td>Port 443 refusé au redémarrage</td><td>Le processus lancé par le wrapper npm survivait à l'arrêt de ce wrapper</td><td>Vérification de la ligne de commande du processus occupant, puis arrêt dirigé ; le serveur est relancé directement par Node</td></tr>
+  <tr><td>Clé d'environnement semblant ignorée</td><td>Variable déclarée vide dans le shell : elle écrase la valeur du fichier <code>.env.local</code></td><td>Relancer le serveur avec l'environnement propre ; le diagnostic a d'abord été cherché dans le code, à tort</td></tr>
+  <tr><td>Widget « Type de clé non valide » sur la page de connexion</td><td>Version de clé et version de code incompatibles : le type choisi dans la console Google (v2 ou v3) ne correspondait pas au markup servi. Le message est affiché au propriétaire du site, pas au visiteur, et il n'existe qu'en combinaison v3</td><td>Diagnostic mené par la lecture de la console Google plutôt que par le code : la page montre le type réel de la clé. La clé a été recréée en v2 et le module laissé en v2 ; les deux modes restent documentés séparément</td></tr>
+  <tr><td>Aucun jeton produit en v3 alors que le script était chargé</td><td>Le composant s'exécutait au montage, avant l'arrivée d'<code>api.js</code>, et reCAPTCHA v3 ne génère rien dans un onglet masqué</td><td>Attendu avec l'apparition d'une clé v3. Ce mode ayant été abandonné au profit de la case à cocher, le problème ne se pose plus : c'est Google qui remplit le champ du formulaire au clic, sans intervention du code de l'application</td></tr>
+  <tr><td>Réponses de l'assistant coupées en plein milieu</td><td>Tokens de « réflexion » remplissant la sortie maximale</td><td><code>thinking_budget: 0</code> et sortie portée à 1 600 tokens</td></tr>
+  <tr><td>Assistant silencieusement sans IA</td><td>Identifiants de modèles codés en dur, devenus indisponibles (404) ; le repli les masquait</td><td>Liste de modèles réellement disponibles, ordonnée, avec bascule sur erreur ; la source est affichée à l'utilisateur</td></tr>
+  <tr><td>Haut de la conversation inaccessible</td><td><code>scrollIntoView</code> inefficace dans un parent en position fixe, comportement fluide suspendu quand l'onglet est masqué</td><td>Positionnement direct de la zone par <code>scrollTop</code></td></tr>
+</table>
+
+<div class="saut"></div>
+<h1>16. Limites connues et évolutions possibles</h1>
+<h2>16.1 Limites assumées</h2>
+<ul>
+  <li><strong>Courriels simulés.</strong> Le module consigne les messages dans la collection <code>emails</code> avec leur lien : aucun serveur SMTP n'est contacté, ce qui permet une démonstration hors ligne et sans boîte réelle. Le passage à l'envoi véritable consiste à remplacer <code>lib/mail.ts</code> par un transporteur SMTP en gardant la même signature. Le lien de l'e-mail de démonstration contient un jeton d'exemple : il est volontairement faux et mène à « lien invalide ».</li>
+  <li><strong>Version de Next contrainte.</strong> Le maintien en Node 18.13 fixe Next en 13.5 : pas d'actions serveur, dépendances figées.</li>
+  <li><strong>Trace de SQLite conservée.</strong> <code>better-sqlite3</code> reste dépendance du projet et <code>data/arp.db</code> existe encore : ni l'un ni l'autre ne sont utilisés au runtime, uniquement par le script de migration. À supprimer au premier déploiement.</li>
+  <li><strong>Base mono-poste.</strong> La connexion est mémoïsée par processus et mongod est lancé par l'application : une installation à deux serveurs exigerait une base hébergée.</li>
+  <li><strong>Aucune projection en couche de lecture.</strong> <code>findDocs</code> retourne les documents entiers, donc les binaires : sur les listes de comptes rendus et de chapitres, les pièces jointes sont relues avec les documents. Payant mais sans effet observable aux volumes de démonstration ; la correction passe par une option de projection dans <code>lib/db.ts</code>.</li>
+  <li><strong>Repli hors ligne limité à l'emploi du temps</strong> (volontaire, cf. section 12.4), sans file d'attente de modifications.</li>
+  <li><strong>Installabilité Android liée au certificat.</strong> Chrome peut refuser une autorité installée par l'utilisateur : le tunnel public devient alors nécessaire.</li>
+  <li><strong>Aucun test automatisé</strong> : ni tests unitaires, ni scénarios de bout en bout rejouables. La section 15 est un protocole manuel, pas une suite.</li>
+  <li><strong>Pas d'expiration temporelle des jetons</strong> d'invitation, pas de limitation du nombre de tentatives de connexion en dehors de l'anti-robot, pas de journal d'audit des accès.</li>
+  <li><strong>Similarité cosinus calculée en JavaScript</strong> : inadapté à des milliers de passages ; documenté comme tel plutôt que présenté comme du vector search.</li>
+  <li><strong>Certains libellés ne suivent pas</strong> : le bandeau « réservé à l'administration » s'affiche pour tout refus d'accès, y compris hors admin ; l'encart de démonstration de la page de connexion peut promettre un mot de passe qui ne marche plus ; le pied de page du tableau de bord contient une entité HTML visible dans une chaîne de caractère.</li>
+  <li><strong>Fonction morte :</strong> <code>resumeDroits()</code> est exportée sans être appelée ; aucun écran n'affiche les droits en toutes lettres.</li>
+</ul>
+<h2>16.2 Évolutions naturelles</h2>
+<ol>
+  <li>Envoi réel des courriels avec modèle HTML et expiration temporelle des jetons.</li>
+  <li>Déploiement hébergé (section 14) : Atlas, secrets d'environnement, domaine publié.</li>
+  <li>File d'attente hors ligne des pointages, rejouée à la reconnexion, avec accusé visuel.</li>
+  <li>Tests automatisés : unités sur <code>lib/</code> (semaine, moyennes, extraction, matrice) et scénarios de bout en bout par rôle.</li>
+  <li>Stockage des pièces jointes hors base, ou au moins projection en lecture pour ne pas charger les binaires.</li>
+  <li>Règle d'examen : signalement automatique au-delà d'un nombre d'absences ou de retards.</li>
+  <li>Bulletin imprimable par étudiant, avec les styles d'impression de l'emploi du temps.</li>
+  <li>Historique des versions de chapitre, et non plus un texte remplacé à chaque envoi.</li>
+  <li>Refonte de l'anti-robot en limitation de débit côté serveur, indépendant de Google et valable aussi hors connexion Internet.</li>
+</ol>
+
+<div class="saut"></div>
+<h1>17. Annexe — arborescence</h1>
+<table>
+  <tr><th>Chemin</th><th>Contenu</th></tr>
+  <tr><td><code>app/</code></td><td>18 écrans (composants serveur) + <code>app/api/</code> 22 points d'entrée + mise en page racine et styles globaux</td></tr>
+  <tr><td><code>components/</code></td><td>13 composants, dont 9 marqués client : Sidebar, Modal, ConfirmForm, Filtres, Pagination, Stats, EmploiTableau, HorsLigneSemaines, AssistantChat, AssistantFlottant, DepotJoint, PrintButton, PwaRegister</td></tr>
+  <tr><td><code>lib/</code></td><td>18 modules : db, permissions, auth, filtres, retour, semaine, origin, cours, rag, qcm, gemini, assistant, assistant-ia, assistant-contexte, hors-ligne, recaptcha, pdf, mail</td></tr>
+  <tr><td><code>middleware.ts</code></td><td>Garde des pages et API ; chemins publics : <code>/login</code>, <code>/reset</code>, <code>/offline</code>, <code>/api/auth/login</code>, <code>/api/auth/reset</code>. Ne vérifie que la forme du cookie : les droits vivent dans la matrice</td></tr>
+  <tr><td><code>public/</code></td><td><code>manifest.webmanifest</code>, <code>sw.js</code> (cache <code>arp-v6</code>), <code>icons/icon.png</code></td></tr>
+  <tr><td><code>scripts/</code></td><td>ensure-mongo.js (lanceur de base), ensure-cert.js (TLS auto-adaptatif), migrate-sqlite-to-mongo.js, show-collections.js, import-cours.js, gen-docx.py, start-mongod.bat, make-cert.ps1, get-mkcert.ps1, expose-phone.sh</td></tr>
+  <tr><td><code>server-https.js</code></td><td>Exposeur HTTPS de la version produite, port 443, lance mongod, signe et applique le certificat</td></tr>
+  <tr><td><code>data/</code></td><td>Reste de la base SQLite d'origine ; hors suivi de versions, plus utilisé au runtime</td></tr>
+  <tr><td><code>certs/</code></td><td>Certificat, <strong>clé privée</strong> et autorité publique mkcert ; hors suivi de versions, ne doit jamais être transmis</td></tr>
+  <tr><td><code>.assistant-secret</code>, <code>.tunnel-secret</code>, <code>.env.local</code></td><td>Secrets locaux : clé Gemini, secret de session, clés reCAPTCHA. Hors suivi de versions</td></tr>
+  <tr><td><code>docs/</code></td><td>Source HTML de ce document, à conserver dans le dépôt pour qu'il ne soit plus perdu</td></tr>
+  <tr><td><code>README.md</code>, <code>README-ANDROID.md</code></td><td>Démarrage général ; procédure détaillée téléphone</td></tr>
+</table>
+<p style="margin-top:24px;color:#64748b;font-size:9.5pt">Document généré le 7 novembre 2026 pour la version 3.1 d'ARP Éducation — Next.js 13.5.11, MongoDB 8.0.10 (driver 7.7.0), TypeScript 5.9.3, Tailwind 3.4.19, Node 18.13, reCAPTCHA v2, API Gemini.</p>
+</body>
+</html>

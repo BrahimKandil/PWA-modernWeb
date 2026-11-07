@@ -14,7 +14,10 @@ if (!process.env.ARP_SECRET) {
 }
 
 // La base doit tourner avant la première page : on la démarre ici plutôt que de la faire attendre à l'utilisateur.
+// Ce serveur est le seul chemin d'exécution local : c'est donc ici, et plus dans lib/db.ts, que vit la veille mongod
+// (lib/db.ts est chargée sur Vercel, où il n'y a aucun mongod à lancer ni à surveiller).
 mongo.demarrer().catch((e) => console.error("MongoDB pas démarré :", e.message));
+mongo.surveille();
 
 // Port unique et fixe : 443 → l'URL est juste https://<IP> (aucun numéro de port à taper).
 const PORT = Number(process.env.HTTPS_PORT ?? 443);

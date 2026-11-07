@@ -4,9 +4,33 @@ import { findOne, insertDoc, updateDoc, removeDocs, nowLocal } from "@/lib/db";
 import { peut } from "@/lib/permissions";
 import { routeurRetour } from "@/lib/retour";
 import { aujourdhui } from "@/lib/semaine";
+import { texteDepuisFichier } from "@/lib/cours";
 import { revalidatePath } from "next/cache";
 
 const estDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso);
+
+// Même plafond que les supports de cours : la fonction serverless refuse un corps de requête
+// de plus de 4,5 Mo, à l'envoi comme au téléchargement de la pièce jointe.
+const TAILLE_MAX = 4 * 1024 * 1024;
+
+/* Le binaire est stocké tel quel pour que le professeur le télécharge. Le texte extrait sert à
+   préremplir « contenu » côté navigateur ; un scan sans texte reste valable comme pièce jointe,
+   l'écran de dépôt a déjà prévenu l'étudiant. */
+async function pieceJointe(form: FormData): Promise<{ erreur: string } | { doc: Record<string, unknown> }> {
+  const depot = form.get("fichier");
+  if (!depot || typeof (depot as File).arrayBuffer !== "function" || (depot as File).size === 0) return { doc: {} };
+
+  const nom = String((depot as File).name ?? "").trim();
+  if (!nom || nom.length > 120) return { erreur: "nom de fichier invalide" };
+
+  const bytes = Buffer.from(await (depot as File).arrayBuffer());
+  if (bytes.length > TAILLE_MAX) return { erreur: "fichier trop lourd (4 Mo maximum)" };
+
+  const lu = texteDepuisFichier(nom, bytes);
+  if (!lu) return { erreur: "format non pris en charge : .docx ou .pdf uniquement" };
+
+  return { doc: { fichier: bytes, fichier_nom: nom, fichier_type: lu.type, taille_octets: bytes.length } };
+}
 
 export async function POST(req: NextRequest) {
   const { erreur, ok, refus } = routeurRetour(req, "/comptes-rendus");
@@ -73,7 +97,17 @@ export async function POST(req: NextRequest) {
     if (m.statut !== "en_cours") return erreur("matière clôturée : dépôt bloqué");
     if (a.date_limite < aujourdhui()) return erreur("délai dépassé : dépôt fermé");
     if (await findOne("cr_depots", { assignment_id: assignmentId, etudiant_id: session.id })) return erreur("déjà déposé — modifiez votre dépôt");
-    await insertDoc("cr_depots", { assignment_id: assignmentId, etudiant_id: session.id, contenu, rendu_le: nowLocal(), note: null, feedback: null });
+    const pj = await pieceJointe(form);
+    if ("erreur" in pj) return erreur(pj.erreur);
+    await insertDoc("cr_depots", {
+      assignment_id: assignmentId,
+      etudiant_id: session.id,
+      contenu,
+      rendu_le: nowLocal(),
+      note: null,
+      feedback: null,
+      ...pj.doc,
+    });
     revalidatePath("/comptes-rendus");
     return ok("compte rendu déposé");
   }
@@ -91,7 +125,10 @@ export async function POST(req: NextRequest) {
     const m = a ? await findOne("matieres", { id: a.matiere_id }) : null;
     if (!m || m.statut !== "en_cours") return erreur("matière clôturée : modification bloquée");
     if (a && a.date_limite < aujourdhui()) return erreur("délai dépassé : modification fermée");
-    await updateDoc("cr_depots", { id }, { contenu, rendu_le: nowLocal() });
+    const pj = await pieceJointe(form);
+    if ("erreur" in pj) return erreur(pj.erreur);
+    // Sans nouveau fichier, la pièce jointe déjà déposée reste en place.
+    await updateDoc("cr_depots", { id }, { contenu, rendu_le: nowLocal(), ...pj.doc });
     revalidatePath("/comptes-rendus");
     return ok("dépôt mis à jour");
   }

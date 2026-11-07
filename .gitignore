@@ -8,3 +8,7 @@ certs/
 server.log
 Tools/
 .idea/
+
+.env
+.env.local
+.env*.local
